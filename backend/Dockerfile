@@ -1,23 +1,28 @@
-FROM python:3.10-slim
+FROM apache/spark:3.5.1-python3
 
-# Install OpenJDK 17 (required for PySpark) and basic build tools
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends openjdk-17-jre-headless procps gcc curl && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+USER root
 
-# Install uv from official Astral binary container
+# Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-# Tell uv to install directly into the system python environment
-ENV UV_SYSTEM_PYTHON=1
+
+# Venv outside /app so bind mounts don't clobber it
+ENV UV_PROJECT_ENVIRONMENT=/venv
+ENV PATH="/venv/bin:${PATH}"
+ENV UV_PYTHON_INSTALL_DIR=/opt/uv_python
 
 WORKDIR /app
 
-COPY pyproject.toml ./
-RUN uv pip install -r pyproject.toml
+# Copy lockfile too for reproducible installs
+COPY pyproject.toml uv.lock ./
+RUN uv sync --no-dev --no-install-project --python 3.10
 
 COPY . .
+
+# Drop root
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app /venv /opt/uv_python
+USER appuser
+
+EXPOSE 8000
