@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="drawio" version="26.0.0">
+  <diagram name="Architecture">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Client Tier -->
+        <mxCell id="client" value="Client Tier" style="swimlane;startSize=30;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="240" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="react" value="React Frontend" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="client">
+          <mxGeometry x="40" y="50" width="160" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- API Tier -->
+        <mxCell id="api" value="API Tier" style="swimlane;startSize=30;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="320" y="40" width="240" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="django" value="Django REST API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="api">
+          <mxGeometry x="40" y="50" width="160" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Messaging Tier -->
+        <mxCell id="msg" value="Messaging Tier" style="swimlane;startSize=30;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="600" y="40" width="240" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="redis" value="Redis&#xa;(Broker / Cache / Results)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" vertex="1" parent="msg">
+          <mxGeometry x="40" y="45" width="160" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Worker Tier -->
+        <mxCell id="worker" value="Worker Tier" style="swimlane;startSize=30;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="880" y="40" width="240" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="celery" value="Celery Workers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="worker">
+          <mxGeometry x="40" y="50" width="160" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Processing Tier -->
+        <mxCell id="proc" value="Processing Tier" style="swimlane;startSize=30;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1160" y="40" width="400" height="300" as="geometry" />
+        </mxCell>
+        <mxCell id="pyspark" value="PySpark Cluster&#xa;(Pattern Matching &amp; Replacement)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" vertex="1" parent="proc">
+          <mxGeometry x="40" y="50" width="160" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="llm" value="LLM Service&#xa;(NL to Regex)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" vertex="1" parent="proc">
+          <mxGeometry x="220" y="50" width="160" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Storage Tier -->
+        <mxCell id="storage" value="Storage Tier" style="swimlane;startSize=30;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="320" y="220" width="240" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="filestore" value="File Storage&#xa;(CSV / Excel / Results)" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="storage">
+          <mxGeometry x="40" y="40" width="160" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Edges -->
+        <!-- React -> Django -->
+        <mxCell id="e1" value="HTTP/REST&#xa;(upload, poll, results)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="react" target="django">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Django -> File Storage -->
+        <mxCell id="e2" value="save file" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="django" target="filestore">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Django -> Redis -->
+        <mxCell id="e3" value="enqueue / cache" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="django" target="redis">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Redis -> Celery -->
+        <mxCell id="e4" value="consume task" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="redis" target="celery">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Celery -> PySpark -->
+        <mxCell id="e5" value="dispatch job" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="celery" target="pyspark">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Celery -> LLM -->
+        <mxCell id="e6" value="generate regex&#xa;(cached in Redis)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="celery" target="llm">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1080" y="230" />
+              <mxPoint x="1080" y="115" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Celery -> File Storage -->
+        <mxCell id="e7" value="read / write" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="celery" target="filestore">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="840" y="230" />
+              <mxPoint x="840" y="290" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Celery -> Redis (progress) -->
+        <mxCell id="e8" value="progress &amp; results" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.25;exitDx=0;exitDy=0;entryX=1;entryY=0.75;entryDx=0;entryDy=0;" edge="1" parent="1" source="celery" target="redis">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Redis -> Django (poll) -->
+        <mxCell id="e9" value="status / results" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.75;exitDx=0;exitDy=0;entryX=1;entryY=0.25;entryDx=0;entryDy=0;" edge="1" parent="1" source="redis" target="django">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- PySpark -> File Storage -->
+        <mxCell id="e10" value="write output" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=1;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="pyspark" target="filestore">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1200" y="200" />
+              <mxPoint x="1200" y="290" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

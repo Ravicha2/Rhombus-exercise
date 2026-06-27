@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7.2-alpine
+    container_name: rhombus_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: rhombus_web
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - CACHE_URL=redis://redis:6379/2
+      - SPARK_MASTER=local[*]
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-mock_key}
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  celery:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: rhombus_celery
+    command: celery -A core worker --loglevel=info
+    volumes:
+      - ./backend:/app
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - CACHE_URL=redis://redis:6379/2
+      - SPARK_MASTER=local[*]
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-mock_key}
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+volumes:
+  redis_data:

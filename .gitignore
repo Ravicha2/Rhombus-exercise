@@ -1,1 +1,46 @@
-.worktrees
+# Git worktrees & Superpowers
+.worktrees/
+worktrees/
+.superpowers/
+.milestones.md
+
+# Environments & Virtualenv
+.env
+.venv/
+venv/
+env/
+
+# Python / Django / Celery
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+db.sqlite3
+/media/
+/static/
+celerybeat-schedule
+celerybeat.pid
+
+# PySpark / Spark / Data
+*.parquet
+*.parquet/
+*.csv
+*.xlsx
+*.xls
+*.json
+/spark-warehouse/
+derby.log
+metastore_db/
+
+# React / Frontend / Node
+node_modules/
+dist/
+build/
+.eslintcache
+
+# IDEs & OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+*.swo
