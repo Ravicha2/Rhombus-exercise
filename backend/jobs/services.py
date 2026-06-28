@@ -1,3 +1,4 @@
+import hashlib
 import os
 import re
 from django.core.cache import cache
@@ -10,7 +11,8 @@ class LLMRegexService:
 
     @classmethod
     def get_or_generate_regex(cls, natural_language_prompt: str) -> str:
-        cache_key = f"{cls.CACHE_PREFIX}{natural_language_prompt}"
+        prompt_hash = hashlib.sha256(natural_language_prompt.encode()).hexdigest()
+        cache_key = f"{cls.CACHE_PREFIX}{prompt_hash}"
         cached_regex = cache.get(cache_key)
         if cached_regex:
             return cached_regex
