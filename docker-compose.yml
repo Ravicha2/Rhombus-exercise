@@ -37,7 +37,7 @@ services:
       dockerfile: Dockerfile.web   # slim image, no Spark
     image: rhombus_web
     container_name: rhombus_web
-    command: python manage.py runserver 0.0.0.0:8000
+    command: sh -c "uv sync --no-dev --no-install-project && python manage.py runserver 0.0.0.0:8000"
     volumes:
       - ./backend:/app
     ports:
@@ -65,7 +65,7 @@ services:
       dockerfile: Dockerfile
     image: rhombus_celery
     container_name: rhombus_celery
-    command: celery -A core worker --loglevel=info
+    command: sh -c "uv sync --no-dev --no-install-project && celery -A core worker --loglevel=info"
     volumes:
       - ./backend:/app
     environment:
