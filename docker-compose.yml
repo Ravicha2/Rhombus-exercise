@@ -52,6 +52,7 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
       - GEMINI_API_KEY=${GEMINI_API_KEY:-mock_key}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-mock_key}
     depends_on:
       redis:
         condition: service_healthy
@@ -79,6 +80,7 @@ services:
       - DB_PORT=5432
       - SPARK_MASTER=local[*]
       - GEMINI_API_KEY=${GEMINI_API_KEY:-mock_key}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-mock_key}
     depends_on:
       redis:
         condition: service_healthy

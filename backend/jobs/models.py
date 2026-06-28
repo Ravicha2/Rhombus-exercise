@@ -15,6 +15,8 @@ class ProcessingJob(models.Model):
     progress = models.FloatField(default=0.0, help_text="Task progress percentage (0.0 to 100.0)")
     task_id = models.CharField(max_length=255, blank=True, null=True, help_text="Celery async task identifier")
     error_message = models.TextField(blank=True, null=True, help_text="Failure explanation if status is FAILED")
+    output_file_path = models.CharField(max_length=1024, blank=True, null=True, help_text="Relative path to full processed output file")
+    preview_file_path = models.CharField(max_length=1024, blank=True, null=True, help_text="Relative path to 1000-row preview JSON file")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
