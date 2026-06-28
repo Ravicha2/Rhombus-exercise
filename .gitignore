@@ -3,6 +3,7 @@
 worktrees/
 .superpowers/
 .milestones.md
+CONTEXT.md
 
 # Environments & Virtualenv
 .env

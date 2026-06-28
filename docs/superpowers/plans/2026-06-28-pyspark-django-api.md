@@ -4,7 +4,7 @@
 
 **Goal:** Implement the PySpark distributed data processing engine, OpenRouter LLM regex service, and Django REST API endpoints for asynchronous upload, job creation, polling with in-memory preview pagination, and full dataset export.
 
-**Architecture:** The project maintains strict separation between PostgreSQL for metadata concurrency and a shared Docker volume (`/app/uploads_storage/`) for large dataset ingestion and dual-file export (`processed_<job_id>.csv` and `preview_<job_id>.json`). Celery manages asynchronous background execution using Redis as a message broker and cache layer, while OpenRouter provides LLM capabilities via the `openai` Python client.
+__Architecture:__ The project maintains strict separation between PostgreSQL for metadata concurrency and a shared Docker volume (`/app/uploads_storage/`) for large dataset ingestion and dual-file export (`processed_<job_id>.csv` and `preview_<job_id>.json`). Celery manages asynchronous background execution using Redis as a message broker and cache layer, while OpenRouter provides LLM capabilities via the `openai` Python client.
 
 **Tech Stack:** Python 3.10+, Django 4.2.11, Django REST Framework 3.15.1, Celery 5.3.6, Redis 5.0.3, PySpark 3.5.1, OpenAI Python Client 1.14.3.
 
@@ -22,6 +22,7 @@
 ### Task 1: Add `openai` dependency, configure OpenRouter environment variables, and update `ProcessingJob` model
 
 **Files:**
+
 - Modify: `backend/pyproject.toml:6-17`
 - Modify: `docker-compose.yml:105-148`
 - Modify: `.env.example:13-15`
@@ -29,12 +30,13 @@
 - Modify: `backend/jobs/tests.py:1-25`
 
 **Interfaces:**
+
 - Consumes: Environment variable `OPENROUTER_API_KEY`.
 - Produces: `openai` dependency, `jobs.models.ProcessingJob` with `output_file_path` and `preview_file_path` fields.
-
 - [ ] **Step 1: Write failing test in `backend/jobs/tests.py` verifying new model fields**
 
 Modify `backend/jobs/tests.py`:
+
 ```python
 from django.test import TestCase
 from uploads.models import DatasetUpload
@@ -81,6 +83,7 @@ Expected: FAIL with `TypeError: ProcessingJob() got an unexpected keyword argume
 - [ ] **Step 3: Update `pyproject.toml`, `docker-compose.yml`, `.env.example`, and implement model fields in `backend/jobs/models.py`**
 
 Modify `backend/pyproject.toml`:
+
 ```toml
 [project]
 name = "rhombus-backend"
@@ -107,6 +110,7 @@ build-backend = "hatchling.build"
 ```
 
 Modify `docker-compose.yml` environment blocks for `web` and `celery`:
+
 ```yaml
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
@@ -117,19 +121,20 @@ Modify `docker-compose.yml` environment blocks for `web` and `celery`:
       - DB_PASSWORD=postgres
       - DB_HOST=db
       - DB_PORT=5432
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-mock_key}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-mock_key}
 ```
+
 (Apply to both `web` and `celery` service definitions in `docker-compose.yml`).
 
 Modify `.env.example`:
-```
+
+```yaml
 # LLM Integration
-GEMINI_API_KEY=your_gemini_api_key_here
 OPENROUTER_API_KEY=your_openrouter_api_key_here
 ```
 
 Modify `backend/jobs/models.py`:
+
 ```python
 from django.db import models
 from uploads.models import DatasetUpload
@@ -177,18 +182,20 @@ git commit -m "feat(jobs): add output and preview file path fields and configure
 ### Task 2: Implement `UploadView` in `uploads` app to stream file chunks to shared volume
 
 **Files:**
+
 - Create: `backend/uploads/views.py`
 - Create: `backend/uploads/urls.py`
 - Modify: `backend/core/urls.py:17-23`
 - Modify: `backend/uploads/tests.py:1-25`
 
 **Interfaces:**
+
 - Consumes: Multipart form data with `file`.
 - Produces: `POST /api/uploads/` endpoint returning `{"upload_id": 1, "file_path": "uploads_storage/...", "uploaded_at": "..."}`.
-
 - [ ] **Step 1: Write failing test in `backend/uploads/tests.py` testing `UploadView`**
 
 Modify `backend/uploads/tests.py`:
+
 ```python
 import os
 import shutil
@@ -248,6 +255,7 @@ Expected: FAIL with `404 != 201` (URL `/api/uploads/` not found)
 - [ ] **Step 3: Implement `UploadView`, configure `uploads/urls.py`, and register in `core/urls.py`**
 
 Create `backend/uploads/views.py`:
+
 ```python
 import os
 import uuid
@@ -291,6 +299,7 @@ class UploadView(APIView):
 ```
 
 Create `backend/uploads/urls.py`:
+
 ```python
 from django.urls import path
 from uploads.views import UploadView
@@ -301,6 +310,7 @@ urlpatterns = [
 ```
 
 Modify `backend/core/urls.py`:
+
 ```python
 from django.contrib import admin
 from django.urls import path, include
@@ -328,16 +338,18 @@ git commit -m "feat(uploads): implement UploadView to stream large files to shar
 ### Task 3: Implement `LLMRegexService` in `jobs` app with OpenRouter integration and Redis caching
 
 **Files:**
+
 - Create: `backend/jobs/services.py`
 - Create: `backend/jobs/tests_service.py`
 
 **Interfaces:**
+
 - Consumes: `OPENROUTER_API_KEY`, `django.core.cache.cache`.
 - Produces: `LLMRegexService.get_or_generate_regex(natural_language_prompt)`.
-
-- [ ] **Step 1: Write failing test in `backend/jobs/tests_service.py` testing `LLMRegexService`**
+- [ ] __Step 1: Write failing test in `backend/jobs/tests_service.py` testing `LLMRegexService`__
 
 Create `backend/jobs/tests_service.py`:
+
 ```python
 from unittest.mock import patch, MagicMock
 from django.test import TestCase
@@ -411,6 +423,7 @@ Expected: FAIL with `ModuleNotFoundError: No module named 'jobs.services'`
 - [ ] **Step 3: Implement `LLMRegexService` in `backend/jobs/services.py`**
 
 Create `backend/jobs/services.py`:
+
 ```python
 import os
 import re
@@ -489,16 +502,18 @@ git commit -m "feat(jobs): implement LLMRegexService using OpenRouter with Redis
 ### Task 4: Implement `run_pyspark_job` Celery task in `jobs` app for distributed regex replacement and dual-file export
 
 **Files:**
+
 - Create: `backend/jobs/tasks.py`
 - Create: `backend/jobs/tests_tasks.py`
 
 **Interfaces:**
+
 - Consumes: `ProcessingJob`, `DatasetUpload`.
 - Produces: `run_pyspark_job` Celery task writing `processed_<job_id>.csv` and `preview_<job_id>.json`.
-
-- [ ] **Step 1: Write failing test in `backend/jobs/tests_tasks.py` testing `run_pyspark_job`**
+- [ ] __Step 1: Write failing test in `backend/jobs/tests_tasks.py` testing `run_pyspark_job`__
 
 Create `backend/jobs/tests_tasks.py`:
+
 ```python
 import os
 import shutil
@@ -573,9 +588,10 @@ class PySparkEngineTaskTest(TestCase):
 Run: `python manage.py test jobs.tests_tasks` (from `backend` directory)
 Expected: FAIL with `ImportError: cannot import name 'run_pyspark_job' from 'jobs.tasks'`
 
-- [ ] **Step 3: Implement `run_pyspark_job` in `backend/jobs/tasks.py` using PySpark**
+- [ ] __Step 3: Implement `run_pyspark_job` in `backend/jobs/tasks.py` using PySpark__
 
 Create `backend/jobs/tasks.py`:
+
 ```python
 import os
 import traceback
@@ -678,18 +694,20 @@ git commit -m "feat(jobs): implement run_pyspark_job Celery task with distribute
 ### Task 5: Implement `JobCreateView`, `JobStatusView`, and `JobDownloadView` in `jobs` app with pagination
 
 **Files:**
+
 - Create: `backend/jobs/views.py`
 - Create: `backend/jobs/urls.py`
 - Modify: `backend/core/urls.py:20-25`
 - Create: `backend/jobs/tests_views.py`
 
 **Interfaces:**
+
 - Consumes: `LLMRegexService`, `run_pyspark_job`, `ProcessingJob`.
 - Produces: `POST /api/jobs/create/`, `GET /api/jobs/<job_id>/status/?page=1&size=50`, `GET /api/jobs/<job_id>/download/`.
-
-- [ ] **Step 1: Write failing test in `backend/jobs/tests_views.py` testing job API endpoints**
+- [ ] __Step 1: Write failing test in `backend/jobs/tests_views.py` testing job API endpoints__
 
 Create `backend/jobs/tests_views.py`:
+
 ```python
 import os
 import json
@@ -788,6 +806,7 @@ Expected: FAIL with `404 != 202` (URL `/api/jobs/create/` not found)
 - [ ] **Step 3: Implement `JobCreateView`, `JobStatusView`, `JobDownloadView` in `backend/jobs/views.py` and configure routing**
 
 Create `backend/jobs/views.py`:
+
 ```python
 import os
 import json
@@ -896,6 +915,7 @@ class JobDownloadView(APIView):
 ```
 
 Create `backend/jobs/urls.py`:
+
 ```python
 from django.urls import path
 from jobs.views import JobCreateView, JobStatusView, JobDownloadView
@@ -908,6 +928,7 @@ urlpatterns = [
 ```
 
 Modify `backend/core/urls.py`:
+
 ```python
 from django.contrib import admin
 from django.urls import path, include

@@ -15,4 +15,5 @@ accepted
 
 - **Concurrency**: Celery workers and Django web views can reliably perform concurrent read/write operations on `ProcessingJob` statuses and progress percentages.
 - **Performance**: PySpark can utilize native distributed file loaders (`spark.read.csv`, `spark.read.format('com.crealytics.spark.excel')`) directly against the local filesystem.
+- **Result Retrieval Separation**: PySpark writes both a full processed CSV/Excel file for bulk download and a lightweight `preview_head.json` (first 1,000 rows) to the shared volume. The Django API serves the JSON preview with in-memory pagination (`page=1&size=50`) for the React table, and provides a separate `/download/` endpoint for the full file. This prevents database bloat and eliminates high memory overhead during web pagination.
 - **Infrastructure**: Requires adding a PostgreSQL service to `docker-compose.yml` and managing database/filesystem backup synchronization separately.
