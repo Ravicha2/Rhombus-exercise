@@ -6,7 +6,7 @@ class ProcessingJob(models.Model):
     STATUS_CHOICES = [
         ("QUEUED", "Queued"),
         ("RUNNING", "Running"),
-        ("COMPLETED", "Completed"),
+        ("SUCCESS", "Success"),
         ("FAILED", "Failed"),
     ]
 
