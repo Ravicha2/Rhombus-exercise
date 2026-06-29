@@ -6,7 +6,7 @@ Upload large CSV or Excel datasets, describe patterns in natural language, and r
 
 ## Architecture
 
-![Architecture Diagram](diagrams/architecture.png)
+![Architecture Diagram](./docs/diagrams/architecture.png)
 
 ---
 
