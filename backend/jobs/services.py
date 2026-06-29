@@ -1,15 +1,50 @@
 import hashlib
 import os
 import re
+import signal
 from django.conf import settings
 from django.core.cache import cache
 from openai import OpenAI
 from uploads.models import DatasetUpload
 
 
+class RegexSafetyError(Exception):
+    """Raised when a regex pattern may cause catastrophic backtracking."""
+
+
+_REGEX_SAFETY_TIMEOUT = 2  # seconds
+_REGEX_SAFETY_TEST_STRING = "a" * 30  # short string to detect pathological patterns
+
+
+def _regex_timeout_handler(signum, frame):
+    raise RegexSafetyError(
+        "Regex pattern timed out during safety check, likely catastrophic backtracking"
+    )
+
+
 class LLMRegexService:
     CACHE_PREFIX = "regex_prompt:"
     CACHE_TTL = 60 * 60 * 24 * 14  # 14 days
+
+    @classmethod
+    def validate_regex_safety(cls, pattern: str) -> None:
+        """Compile regex and test it against a short string with a timeout.
+
+        Raises ValueError if the pattern is syntactically invalid.
+        Raises RegexSafetyError if the pattern triggers catastrophic backtracking.
+        """
+        try:
+            compiled = re.compile(pattern)
+        except re.error as e:
+            raise ValueError(f"Generated regex pattern is invalid: {e}. Pattern was: {pattern}")
+        # ponytail: signal.alarm for timeout; upgrade to per-regex locks if throughput matters
+        old_handler = signal.signal(signal.SIGALRM, _regex_timeout_handler)
+        signal.alarm(_REGEX_SAFETY_TIMEOUT)
+        try:
+            compiled.search(_REGEX_SAFETY_TEST_STRING)
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old_handler)
 
     @classmethod
     def get_or_generate_regex(cls, natural_language_prompt: str) -> str:
@@ -52,11 +87,8 @@ class LLMRegexService:
             else:
                 pattern = pattern.replace("```regex", "").replace("```", "").strip()
 
-        # Validate regex compilation
-        try:
-            re.compile(pattern)
-        except re.error as e:
-            raise ValueError(f"Generated regex pattern is invalid: {e}. Pattern was: {pattern}")
+        # Validate regex: compilation + backtracking guard
+        cls.validate_regex_safety(pattern)
 
         cache.set(cache_key, pattern, cls.CACHE_TTL)
         return pattern
