@@ -1,8 +1,10 @@
 import hashlib
 import os
 import re
+from django.conf import settings
 from django.core.cache import cache
 from openai import OpenAI
+from uploads.models import DatasetUpload
 
 
 class LLMRegexService:
@@ -58,3 +60,12 @@ class LLMRegexService:
 
         cache.set(cache_key, pattern, cls.CACHE_TTL)
         return pattern
+
+
+class StorageService:
+    STORAGE_DIR_NAME = "uploads_storage"
+
+    @classmethod
+    def resolve_absolute_path(cls, dataset: DatasetUpload) -> str:
+        storage_dir = os.path.join(str(settings.BASE_DIR), cls.STORAGE_DIR_NAME)
+        return os.path.join(storage_dir, os.path.basename(dataset.file_path))

@@ -1,4 +1,5 @@
 from django.db import models
+from django.core.exceptions import ValidationError
 from uploads.models import DatasetUpload
 
 
@@ -19,6 +20,46 @@ class ProcessingJob(models.Model):
     preview_file_path = models.CharField(max_length=1024, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    VALID_TRANSITIONS = {
+        "QUEUED": ["RUNNING", "FAILED"],
+        "RUNNING": ["SUCCESS", "FAILED"],
+        "SUCCESS": [],
+        "FAILED": [],
+    }
+
+    def _transition(self, new_status, **kwargs):
+        if new_status not in self.VALID_TRANSITIONS.get(self.status, []):
+            raise ValidationError(
+                f"Cannot transition from {self.status} to {new_status}"
+            )
+        self.status = new_status
+        for field, value in kwargs.items():
+            setattr(self, field, value)
+        self.save()
+
+    def mark_running(self, task_id=None):
+        kwargs = {}
+        if task_id is not None:
+            kwargs["task_id"] = task_id
+        self._transition("RUNNING", **kwargs)
+
+    def update_progress(self, progress):
+        if self.status != "RUNNING":
+            raise ValidationError("Can only update progress on a RUNNING job")
+        self.progress = min(max(progress, 0.0), 100.0)
+        self.save()
+
+    def mark_success(self, output_file_path=None, preview_file_path=None):
+        kwargs = {"progress": 100.0}
+        if output_file_path is not None:
+            kwargs["output_file_path"] = output_file_path
+        if preview_file_path is not None:
+            kwargs["preview_file_path"] = preview_file_path
+        self._transition("SUCCESS", **kwargs)
+
+    def mark_failed(self, error_message):
+        self._transition("FAILED", error_message=error_message)
 
     def __str__(self):
         return f"ProcessingJob {self.id} ({self.status}) - Progress: {self.progress}%"
