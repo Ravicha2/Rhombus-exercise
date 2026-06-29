@@ -9,7 +9,7 @@ from uploads.models import DatasetUpload
 
 class LLMRegexService:
     CACHE_PREFIX = "regex_prompt:"
-    CACHE_TTL = 60 * 60 * 24 * 30  # 30 days
+    CACHE_TTL = 60 * 60 * 24 * 14  # 14 days
 
     @classmethod
     def get_or_generate_regex(cls, natural_language_prompt: str) -> str:
@@ -33,7 +33,7 @@ class LLMRegexService:
         )
 
         response = client.chat.completions.create(
-            model="meta-llama/llama-3-8b-instruct:free",
+            model="deepseek/deepseek-v4-flash",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": natural_language_prompt}
