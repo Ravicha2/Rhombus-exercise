@@ -1,9 +1,38 @@
 from unittest.mock import patch, MagicMock
 from django.test import TestCase
 from django.core.cache import cache
+from openai import APIConnectionError, RateLimitError, APITimeoutError
 from uploads.models import DatasetUpload
 from jobs.models import ProcessingJob
 from jobs.services import RegexSafetyError, TriageError, SparkProcessingService
+
+
+class ProcessJobRetryConfigTest(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.dataset = DatasetUpload.objects.create(
+            file_path="uploads/test.csv",
+            status="READY",
+            column_names=["email"],
+        )
+
+    def test_autoretry_for_includes_transient_errors(self):
+        from jobs.tasks import process_job
+
+        retry_for = process_job.autoretry_for
+        self.assertIn(APIConnectionError, retry_for)
+        self.assertIn(RateLimitError, retry_for)
+        self.assertIn(APITimeoutError, retry_for)
+
+    def test_max_retries_is_three(self):
+        from jobs.tasks import process_job
+
+        self.assertEqual(process_job.max_retries, 3)
+
+    def test_retry_backoff_enabled(self):
+        from jobs.tasks import process_job
+
+        self.assertTrue(process_job.retry_backoff)
 
 
 class ProcessJobTaskTest(TestCase):

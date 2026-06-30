@@ -1,5 +1,6 @@
 import logging
 from celery import shared_task
+from openai import APIConnectionError, RateLimitError, APITimeoutError
 from jobs.models import ProcessingJob
 from jobs.services import (
     LLMRegexService,
@@ -13,7 +14,12 @@ from jobs.services import (
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True)
+@shared_task(
+    bind=True,
+    autoretry_for=(APIConnectionError, RateLimitError, APITimeoutError),
+    retry_backoff=True,
+    max_retries=3,
+)
 def process_job(self, job_id: int) -> None:
     """Orchestrate triage -> regex generation -> Spark processing for a ProcessingJob."""
     try:
