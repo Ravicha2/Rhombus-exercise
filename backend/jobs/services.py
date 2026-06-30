@@ -6,6 +6,7 @@ import signal
 from django.conf import settings
 from django.core.cache import cache
 from openai import OpenAI
+from pyspark.sql import functions as F
 from uploads.models import DatasetUpload
 
 
@@ -192,10 +193,48 @@ class TriageService:
         return transformations
 
 
+class SparkProcessingService:
+    @classmethod
+    def process(cls, parquet_path: str, specs: list[dict], job_id: int,
+                progress_callback=None, storage_dir: str | None = None) -> tuple[str, str]:
+        from jobs.spark import get_spark_session
+        spark = get_spark_session()
+        df = spark.read.parquet(parquet_path)
+        total = len(specs)
+
+        # Build all regex replacements in a single projection to avoid
+        # degenerate Catalyst plans (SPARK-17006).
+        exprs = {col: F.col(col) for col in df.columns}
+        for i, spec in enumerate(specs, 1):
+            exprs[spec["column"]] = F.regexp_replace(
+                F.col(spec["column"]), spec["regex"], spec["replacement"]
+            )
+            if progress_callback and total > 0:
+                progress_callback(round(i / total * 100))
+        df = df.select(*[expr.alias(col) for col, expr in exprs.items()])
+
+        result_rel = os.path.join("output", str(job_id), "result")
+        preview_rel = os.path.join("output", str(job_id), "preview.parquet")
+        base = storage_dir or StorageService.get_storage_base_dir()
+        output_dir = os.path.join(base, result_rel)
+
+        os.makedirs(output_dir, exist_ok=True)
+        df.write.mode("overwrite").parquet(output_dir)
+
+        # Read from written output to avoid re-executing transformations
+        spark.read.parquet(output_dir).limit(100) \
+            .write.mode("overwrite").parquet(os.path.join(base, preview_rel))
+
+        return result_rel, preview_rel
+
+
 class StorageService:
     STORAGE_DIR_NAME = "uploads_storage"
 
     @classmethod
+    def get_storage_base_dir(cls) -> str:
+        return os.path.join(str(settings.BASE_DIR), cls.STORAGE_DIR_NAME)
+
+    @classmethod
     def resolve_absolute_path(cls, dataset: DatasetUpload) -> str:
-        storage_dir = os.path.join(str(settings.BASE_DIR), cls.STORAGE_DIR_NAME)
-        return os.path.join(storage_dir, os.path.basename(dataset.file_path))
+        return os.path.join(cls.get_storage_base_dir(), os.path.basename(dataset.file_path))
