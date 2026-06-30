@@ -26,14 +26,14 @@ Import `APIConnectionError`, `RateLimitError`, `APITimeoutError` directly from `
 At the top of `process_job`, after fetching the job, reset state if the job is not in QUEUED (indicates a retry after a transient failure):
 
 ```python
-if job.status != "QUEUED":
+if job.status in ("RUNNING", "FAILED"):
     job.status = "QUEUED"
     job.error_message = None
     job.progress = 0.0
     job.save()
 ```
 
-This bypasses `VALID_TRANSITIONS` as an intentional internal recovery mechanism (per ADR 0005). The subsequent `mark_running()` call transitions QUEUED to RUNNING through normal validation.
+This bypasses `VALID_TRANSITIONS` as an intentional internal recovery mechanism (per ADR 0005). The subsequent `mark_running()` call transitions QUEUED to RUNNING through normal validation. Terminal states (SUCCESS, CANCELLED) are intentionally excluded to prevent re-processing completed or cancelled jobs.
 
 This handles two retry scenarios:
 - Job stuck in RUNNING (task crashed mid-execution before any except block ran)
@@ -55,5 +55,5 @@ Other exceptions (e.g. `RuntimeError`) also call `mark_failed` and re-raise. Sin
 
 - [x] `autoretry_for=(APIConnectionError, RateLimitError, APITimeoutError)` on the task decorator with `retry_backoff=True, max_retries=3`
 - [x] Deterministic errors (TriageError, ValueError, RegexSafetyError) are NOT retried
-- [x] On retry, if `job.status != "QUEUED"`, reset to QUEUED with `error_message=None` and `progress=0.0`
-- [x] Tests: transient errors trigger retry config, deterministic errors fail immediately, retry resets job state
+- [x] On retry, if `job.status in ("RUNNING", "FAILED")`, reset to QUEUED with `error_message=None` and `progress=0.0`
+- [x] Tests: transient errors trigger retry config, deterministic errors fail immediately, retry resets job state, SUCCESS/CANCELLED jobs are not reset
