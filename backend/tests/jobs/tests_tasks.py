@@ -312,6 +312,35 @@ class ProcessJobRetryResetTest(TestCase):
         # If status is QUEUED, the reset block is skipped entirely
         self.assertEqual(job.progress, 0.0)
 
+    def test_success_job_not_reset(self):
+        """A SUCCESS job must not be reset to QUEUED and re-processed."""
+        job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact emails")
+        job.status = "SUCCESS"
+        job.progress = 100.0
+        job.save()
+
+        from jobs.tasks import process_job
+        from django.core.exceptions import ValidationError
+        with self.assertRaises(ValidationError):
+            process_job(job.id)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "SUCCESS")
+
+    def test_cancelled_job_not_reset(self):
+        """A CANCELLED job must not be reset to QUEUED and re-processed."""
+        job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact emails")
+        job.status = "CANCELLED"
+        job.save()
+
+        from jobs.tasks import process_job
+        from django.core.exceptions import ValidationError
+        with self.assertRaises(ValidationError):
+            process_job(job.id)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "CANCELLED")
+
 
 class ProcessJobDeterministicErrorTest(TestCase):
     def setUp(self):

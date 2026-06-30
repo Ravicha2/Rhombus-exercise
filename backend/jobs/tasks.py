@@ -29,7 +29,7 @@ def process_job(self, job_id: int) -> None:
         raise
 
     # Retry recovery: reset partial state so the normal flow can re-execute
-    if job.status != "QUEUED":
+    if job.status in ("RUNNING", "FAILED"):
         job.status = "QUEUED"
         job.error_message = None
         job.progress = 0.0
