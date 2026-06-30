@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 import re
 import signal
@@ -10,6 +11,10 @@ from uploads.models import DatasetUpload
 
 class RegexSafetyError(Exception):
     """Raised when a regex pattern may cause catastrophic backtracking."""
+
+
+class TriageError(Exception):
+    """Raised when triage fails to produce valid structured output or references unknown columns."""
 
 
 _REGEX_SAFETY_TIMEOUT = 2  # seconds
@@ -92,6 +97,99 @@ class LLMRegexService:
 
         cache.set(cache_key, pattern, cls.CACHE_TTL)
         return pattern
+
+
+class TriageService:
+    @classmethod
+    def triage(cls, natural_language_prompt: str, column_names: list[str]) -> list[dict]:
+        """Parse a natural language prompt into structured transformations.
+
+        Calls the LLM with the dataset column names as context, parses the JSON
+        response into a list of transformation dicts, and validates that every
+        target column exists in the provided schema.
+
+        Args:
+            natural_language_prompt: The user's free-text description of what to transform.
+            column_names: The dataset's actual column names to validate against.
+
+        Returns:
+            A list of dicts, each with keys: column, nl_pattern, replacement.
+
+        Raises:
+            TriageError: If the LLM response is not valid JSON, not a list, missing
+                         required keys, or references columns not in column_names.
+        """
+        api_key = os.environ.get('OPENROUTER_API_KEY', 'mock_key')
+        client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=api_key
+        )
+
+        system_prompt = (
+            "You are an expert data transformation analyst. "
+            "Given a natural language prompt and a list of column names from a dataset, "
+            "identify which columns the user wants to transform, what pattern to match in each column, "
+            "and what replacement value to use (empty string if no replacement is specified). "
+            "Respond with ONLY a JSON array of objects. Each object must have exactly three keys: "
+            "'column' (string), 'nl_pattern' (string), and 'replacement' (string). "
+            "Do not include markdown code blocks, explanations, or any other text. "
+            f"The dataset has the following columns: {', '.join(column_names)}."
+        )
+
+        response = client.chat.completions.create(
+            model="deepseek/deepseek-v4-flash",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": natural_language_prompt}
+            ],
+            temperature=0.1,
+        )
+
+        raw_content = response.choices[0].message.content.strip()
+
+        # Sanitize markdown wrapper if present
+        pattern_text = raw_content
+        if pattern_text.startswith("```"):
+            lines = pattern_text.split("\n")
+            if len(lines) >= 2:
+                pattern_text = "\n".join(lines[1:-1]).strip()
+            else:
+                pattern_text = pattern_text.replace("```json", "").replace("```", "").strip()
+
+        try:
+            transformations = json.loads(pattern_text)
+        except json.JSONDecodeError as exc:
+            raise TriageError(
+                f"Failed to parse LLM response as JSON: {exc}. Response was: {raw_content}"
+            )
+
+        if not isinstance(transformations, list):
+            raise TriageError(
+                f"Expected LLM response to be a JSON array, got {type(transformations).__name__}. "
+                f"Response was: {raw_content}"
+            )
+
+        for item in transformations:
+            if not isinstance(item, dict):
+                raise TriageError(
+                    f"Expected each transformation to be a dict, got {type(item).__name__}. "
+                    f"Response was: {raw_content}"
+                )
+            if "column" not in item or "nl_pattern" not in item or "replacement" not in item:
+                raise TriageError(
+                    f"Each transformation must have keys 'column', 'nl_pattern', and 'replacement'. "
+                    f"Missing keys in: {item}. Response was: {raw_content}"
+                )
+
+        unknown_columns = [
+            item["column"] for item in transformations if item["column"] not in column_names
+        ]
+        if unknown_columns:
+            raise TriageError(
+                f"Unknown columns referenced in triage: {unknown_columns}"
+            )
+
+        return transformations
 
 
 class StorageService:
