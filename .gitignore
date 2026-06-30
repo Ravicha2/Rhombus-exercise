@@ -45,3 +45,6 @@ build/
 .DS_Store
 *.swp
 *.swo
+
+# test output
+backend/uploads_storage
