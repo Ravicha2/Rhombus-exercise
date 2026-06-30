@@ -43,7 +43,7 @@ class LLMRegexService:
             compiled = re.compile(pattern)
         except re.error as e:
             raise ValueError(f"Generated regex pattern is invalid: {e}. Pattern was: {pattern}")
-        # ponytail: signal.alarm for timeout; upgrade to per-regex locks if throughput matters
+        # signal.alarm for timeout; upgrade to per-regex locks if throughput matters
         old_handler = signal.signal(signal.SIGALRM, _regex_timeout_handler)
         signal.alarm(_REGEX_SAFETY_TIMEOUT)
         try:

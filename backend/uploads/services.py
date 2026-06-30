@@ -29,6 +29,6 @@ class NormalizationService:
         parquet_path = os.path.splitext(abs_path)[0] + ".parquet"
         df.to_parquet(parquet_path, engine="pyarrow")
 
-        # ponytail: derive relative path by swapping extension, not reconstructing from parts
+        # derive relative path by swapping extension, not reconstructing from parts
         parquet_rel_path = os.path.splitext(dataset.file_path)[0] + ".parquet"
         return parquet_rel_path, column_names
