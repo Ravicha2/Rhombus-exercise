@@ -3,62 +3,127 @@ from django.test import TestCase
 from django.core.cache import cache
 from uploads.models import DatasetUpload
 from jobs.models import ProcessingJob
-from jobs.services import RegexSafetyError
+from jobs.services import RegexSafetyError, TriageError
 
 
-class GenerateRegexTaskTest(TestCase):
+class ProcessJobTaskTest(TestCase):
 
     def setUp(self):
         cache.clear()
-        self.dataset = DatasetUpload.objects.create(file_path="uploads/test.csv")
+        self.dataset = DatasetUpload.objects.create(
+            file_path="uploads/test.csv",
+            status="READY",
+            column_names=["email", "name", "phone"],
+        )
 
-    @patch('jobs.tasks.LLMRegexService')
-    def test_task_marks_job_running_then_success(self, mock_service):
-        mock_service.get_or_generate_regex.return_value = r"\b\d+\b"
-        job = ProcessingJob.objects.create(dataset=self.dataset)
+    @patch("jobs.tasks.LLMRegexService")
+    @patch("jobs.tasks.TriageService")
+    def test_full_orchestration_marks_success(self, mock_triage, mock_regex):
+        mock_triage.triage.return_value = [
+            {"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"},
+        ]
+        mock_regex.get_or_generate_regex.return_value = r"\b\S+@\S+\.\S+\b"
+        job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact all emails")
 
-        from jobs.tasks import generate_regex
-        generate_regex(job.id, "find numbers")
+        from jobs.tasks import process_job
+        process_job(job.id)
 
         job.refresh_from_db()
         self.assertEqual(job.status, "SUCCESS")
-        mock_service.get_or_generate_regex.assert_called_once_with("find numbers")
+        mock_triage.triage.assert_called_once_with("redact all emails", ["email", "name", "phone"])
+        mock_regex.get_or_generate_regex.assert_called_once_with("email addresses")
+        self.assertEqual(job.transformations, [
+            {"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"},
+        ])
+        self.assertEqual(job.generated_regexes, [
+            {"column": "email", "regex": r"\b\S+@\S+\.\S+\b"},
+        ])
 
-    @patch('jobs.tasks.LLMRegexService')
-    def test_task_marks_job_failed_on_value_error(self, mock_service):
-        mock_service.get_or_generate_regex.side_effect = ValueError("bad regex")
-        job = ProcessingJob.objects.create(dataset=self.dataset)
+    @patch("jobs.tasks.LLMRegexService")
+    @patch("jobs.tasks.TriageService")
+    def test_multi_column_orchestration(self, mock_triage, mock_regex):
+        mock_triage.triage.return_value = [
+            {"column": "email", "nl_pattern": "email addresses", "replacement": "[EMAIL]"},
+            {"column": "phone", "nl_pattern": "phone numbers", "replacement": "[PHONE]"},
+        ]
+        mock_regex.get_or_generate_regex.side_effect = [r"\S+@\S+", r"\d{3}-\d{4}"]
+        job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact emails and phones")
 
-        from jobs.tasks import generate_regex
-        with self.assertRaises(ValueError):
-            generate_regex(job.id, "bad prompt")
+        from jobs.tasks import process_job
+        process_job(job.id)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "SUCCESS")
+        self.assertEqual(len(job.transformations), 2)
+        self.assertEqual(len(job.generated_regexes), 2)
+        self.assertEqual(job.generated_regexes[0]["column"], "email")
+        self.assertEqual(job.generated_regexes[1]["column"], "phone")
+
+    @patch("jobs.tasks.LLMRegexService")
+    @patch("jobs.tasks.TriageService")
+    def test_triage_error_marks_failed(self, mock_triage, mock_regex):
+        mock_triage.triage.side_effect = TriageError("Unknown columns referenced in triage: ['ssn']")
+        job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact SSNs")
+
+        from jobs.tasks import process_job
+        with self.assertRaises(TriageError):
+            process_job(job.id)
 
         job.refresh_from_db()
         self.assertEqual(job.status, "FAILED")
-        self.assertIn("bad regex", job.error_message)
+        self.assertIn("Unknown columns", job.error_message)
 
-    @patch('jobs.tasks.LLMRegexService')
-    def test_task_marks_job_failed_on_unexpected_exception(self, mock_service):
-        mock_service.get_or_generate_regex.side_effect = RuntimeError("LLM down")
-        job = ProcessingJob.objects.create(dataset=self.dataset)
+    @patch("jobs.tasks.LLMRegexService")
+    @patch("jobs.tasks.TriageService")
+    def test_regex_generation_error_marks_failed(self, mock_triage, mock_regex):
+        mock_triage.triage.return_value = [
+            {"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"},
+        ]
+        mock_regex.get_or_generate_regex.side_effect = ValueError("Generated regex pattern is invalid: bad")
+        job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact emails")
 
-        from jobs.tasks import generate_regex
+        from jobs.tasks import process_job
+        with self.assertRaises(ValueError):
+            process_job(job.id)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "FAILED")
+        self.assertIn("bad", job.error_message)
+
+    @patch("jobs.tasks.LLMRegexService")
+    @patch("jobs.tasks.TriageService")
+    def test_regex_safety_error_marks_failed(self, mock_triage, mock_regex):
+        mock_triage.triage.return_value = [
+            {"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"},
+        ]
+        mock_regex.get_or_generate_regex.side_effect = RegexSafetyError("catastrophic backtracking")
+        job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact emails")
+
+        from jobs.tasks import process_job
+        with self.assertRaises(RegexSafetyError):
+            process_job(job.id)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "FAILED")
+        self.assertIn("catastrophic", job.error_message)
+
+    @patch("jobs.tasks.TriageService")
+    def test_job_not_found_raises(self, mock_triage):
+        from jobs.tasks import process_job
+        with self.assertRaises(ProcessingJob.DoesNotExist):
+            process_job(99999)
+
+    @patch("jobs.tasks.LLMRegexService")
+    @patch("jobs.tasks.TriageService")
+    def test_unexpected_error_marks_failed(self, mock_triage, mock_regex):
+        mock_triage.triage.side_effect = RuntimeError("LLM down")
+        job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact emails")
+
+        from jobs.tasks import process_job
         with self.assertRaises(RuntimeError):
-            generate_regex(job.id, "any prompt")
+            process_job(job.id)
 
         job.refresh_from_db()
         self.assertEqual(job.status, "FAILED")
         self.assertIn("LLM down", job.error_message)
 
-    @patch('jobs.tasks.LLMRegexService')
-    def test_task_marks_job_failed_on_backtracking_timeout(self, mock_service):
-        mock_service.get_or_generate_regex.side_effect = RegexSafetyError("timeout")
-        job = ProcessingJob.objects.create(dataset=self.dataset)
-
-        from jobs.tasks import generate_regex
-        with self.assertRaises(RegexSafetyError):
-            generate_regex(job.id, "pathological pattern")
-
-        job.refresh_from_db()
-        self.assertEqual(job.status, "FAILED")
-        self.assertIn("timeout", job.error_message)
