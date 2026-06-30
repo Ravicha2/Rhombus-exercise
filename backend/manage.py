@@ -2,6 +2,12 @@
 """Django's command-line utility for administrative tasks."""
 import os
 import sys
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load .env from project root (one directory up from backend/)
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 
 def main():

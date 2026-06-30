@@ -24,3 +24,13 @@ class StorageServiceTest(TestCase):
         resolved = StorageService.resolve_absolute_path(dataset)
         self.assertNotIn("..", resolved)
         self.assertTrue(resolved.endswith("passwd"))
+
+    def test_resolve_parquet_absolute_path(self):
+        dataset = DatasetUpload.objects.create(
+            file_path="uploads_storage/test_file.csv",
+            parquet_file_path="uploads_storage/test_file.csv.parquet",
+            status="READY",
+        )
+        resolved = StorageService.resolve_parquet_absolute_path(dataset)
+        expected = os.path.join(str(settings.BASE_DIR), "uploads_storage", "test_file.csv.parquet")
+        self.assertEqual(resolved, expected)

@@ -13,9 +13,12 @@ class ProcessingJob(models.Model):
 
     dataset = models.ForeignKey(DatasetUpload, on_delete=models.CASCADE, related_name="jobs")
     task_id = models.CharField(max_length=255, blank=True, null=True)
+    nl_prompt = models.TextField(blank=True, default="", help_text="Natural language prompt describing the desired transformation")
     status = models.CharField(max_length=32, choices=STATUS_CHOICES, default="QUEUED")
     progress = models.FloatField(default=0.0)
     error_message = models.TextField(blank=True, null=True)
+    transformations = models.JSONField(default=list, help_text="Triage output: list of {column, nl_pattern, replacement} dicts")
+    generated_regexes = models.JSONField(blank=True, null=True, help_text="Per-column regexes: list of {column, regex} dicts")
     output_file_path = models.CharField(max_length=1024, blank=True, null=True)
     preview_file_path = models.CharField(max_length=1024, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)

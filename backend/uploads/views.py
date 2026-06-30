@@ -5,6 +5,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from uploads.models import DatasetUpload
+from uploads.tasks import normalize_upload
 
 
 class UploadView(APIView):
@@ -31,6 +32,7 @@ class UploadView(APIView):
 
         rel_path = f"uploads_storage/{filename}"
         dataset = DatasetUpload.objects.create(file_path=rel_path)
+        normalize_upload.delay(dataset.id)
 
         return Response({
             "upload_id": dataset.id,
