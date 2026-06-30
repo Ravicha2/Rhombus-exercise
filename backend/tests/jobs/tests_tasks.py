@@ -312,3 +312,45 @@ class ProcessJobRetryResetTest(TestCase):
         # If status is QUEUED, the reset block is skipped entirely
         self.assertEqual(job.progress, 0.0)
 
+
+class ProcessJobDeterministicErrorTest(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.dataset = DatasetUpload.objects.create(
+            file_path="uploads/test.csv",
+            status="READY",
+            column_names=["email"],
+        )
+
+    def test_triage_error_not_in_autoretry_for(self):
+        from jobs.tasks import process_job
+        from jobs.services import TriageError
+
+        self.assertNotIn(TriageError, process_job.autoretry_for)
+
+    def test_value_error_not_in_autoretry_for(self):
+        from jobs.tasks import process_job
+
+        self.assertNotIn(ValueError, process_job.autoretry_for)
+
+    def test_regex_safety_error_not_in_autoretry_for(self):
+        from jobs.tasks import process_job
+        from jobs.services import RegexSafetyError
+
+        self.assertNotIn(RegexSafetyError, process_job.autoretry_for)
+
+    @patch("jobs.tasks.LLMRegexService")
+    @patch("jobs.tasks.TriageService")
+    def test_triage_error_fails_immediately_no_retry(self, mock_triage, mock_regex):
+        """TriageError marks job FAILED and is not retried by Celery."""
+        mock_triage.triage.side_effect = TriageError("Unknown columns")
+        job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact emails")
+
+        from jobs.tasks import process_job
+        with self.assertRaises(TriageError):
+            process_job(job.id)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "FAILED")
+        self.assertIn("Unknown columns", job.error_message)
+
