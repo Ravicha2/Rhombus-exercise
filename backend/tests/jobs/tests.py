@@ -93,3 +93,31 @@ class ProcessingJobModelTest(TestCase):
         job.mark_failed("Queue error")
         job.refresh_from_db()
         self.assertEqual(job.status, "FAILED")
+
+    def test_mark_cancelled_from_queued(self):
+        job = ProcessingJob.objects.create(dataset=self.dataset)
+        job.mark_cancelled()
+        job.refresh_from_db()
+        self.assertEqual(job.status, "CANCELLED")
+        self.assertEqual(job.error_message, "Cancelled by user")
+
+    def test_mark_cancelled_from_running(self):
+        job = ProcessingJob.objects.create(dataset=self.dataset)
+        job.mark_running()
+        job.mark_cancelled()
+        job.refresh_from_db()
+        self.assertEqual(job.status, "CANCELLED")
+        self.assertEqual(job.error_message, "Cancelled by user")
+
+    def test_cancelled_is_terminal(self):
+        job = ProcessingJob.objects.create(dataset=self.dataset)
+        job.mark_cancelled()
+        with self.assertRaises(ValidationError):
+            job.mark_running()
+
+    def test_cannot_transition_from_success_to_cancelled(self):
+        job = ProcessingJob.objects.create(dataset=self.dataset)
+        job.mark_running()
+        job.mark_success()
+        with self.assertRaises(ValidationError):
+            job.mark_cancelled()
