@@ -3,7 +3,7 @@ from django.test import TestCase
 from django.core.cache import cache
 from uploads.models import DatasetUpload
 from jobs.models import ProcessingJob
-from jobs.services import RegexSafetyError, TriageError
+from jobs.services import RegexSafetyError, TriageError, SparkProcessingService
 
 
 class ProcessJobTaskTest(TestCase):
@@ -16,13 +16,17 @@ class ProcessJobTaskTest(TestCase):
             column_names=["email", "name", "phone"],
         )
 
+    @patch("jobs.tasks.SparkProcessingService")
+    @patch("jobs.tasks.StorageService")
     @patch("jobs.tasks.LLMRegexService")
     @patch("jobs.tasks.TriageService")
-    def test_full_orchestration_marks_success(self, mock_triage, mock_regex):
+    def test_full_orchestration_marks_success(self, mock_triage, mock_regex, mock_storage, mock_spark):
         mock_triage.triage.return_value = [
             {"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"},
         ]
         mock_regex.get_or_generate_regex.return_value = r"\b\S+@\S+\.\S+\b"
+        mock_storage.resolve_parquet_absolute_path.return_value = "/tmp/test.parquet"
+        mock_spark.process.return_value = ("output/1/result", "output/1/preview.parquet")
         job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact all emails")
 
         from jobs.tasks import process_job
@@ -39,14 +43,18 @@ class ProcessJobTaskTest(TestCase):
             {"column": "email", "regex": r"\b\S+@\S+\.\S+\b"},
         ])
 
+    @patch("jobs.tasks.SparkProcessingService")
+    @patch("jobs.tasks.StorageService")
     @patch("jobs.tasks.LLMRegexService")
     @patch("jobs.tasks.TriageService")
-    def test_multi_column_orchestration(self, mock_triage, mock_regex):
+    def test_multi_column_orchestration(self, mock_triage, mock_regex, mock_storage, mock_spark):
         mock_triage.triage.return_value = [
             {"column": "email", "nl_pattern": "email addresses", "replacement": "[EMAIL]"},
             {"column": "phone", "nl_pattern": "phone numbers", "replacement": "[PHONE]"},
         ]
         mock_regex.get_or_generate_regex.side_effect = [r"\S+@\S+", r"\d{3}-\d{4}"]
+        mock_storage.resolve_parquet_absolute_path.return_value = "/tmp/test.parquet"
+        mock_spark.process.return_value = ("output/1/result", "output/1/preview.parquet")
         job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact emails and phones")
 
         from jobs.tasks import process_job
@@ -126,4 +134,80 @@ class ProcessJobTaskTest(TestCase):
         job.refresh_from_db()
         self.assertEqual(job.status, "FAILED")
         self.assertIn("LLM down", job.error_message)
+
+    @patch("jobs.tasks.SparkProcessingService")
+    @patch("jobs.tasks.StorageService")
+    @patch("jobs.tasks.LLMRegexService")
+    @patch("jobs.tasks.TriageService")
+    def test_full_e2e_marks_success_with_output_paths(self, mock_triage, mock_regex, mock_storage, mock_spark):
+        mock_triage.triage.return_value = [
+            {"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"},
+        ]
+        mock_regex.get_or_generate_regex.return_value = r"\b\S+@\S+\.\S+\b"
+        mock_storage.resolve_parquet_absolute_path.return_value = "/tmp/test.parquet"
+        mock_spark.process.return_value = ("output/1/result", "output/1/preview.parquet")
+        job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact all emails")
+
+        from jobs.tasks import process_job
+        process_job(job.id)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "SUCCESS")
+        self.assertEqual(job.output_file_path, "output/1/result")
+        self.assertEqual(job.preview_file_path, "output/1/preview.parquet")
+        mock_spark.process.assert_called_once()
+        call_kwargs = mock_spark.process.call_args
+        specs = call_kwargs.kwargs["specs"]
+        self.assertEqual(specs, [
+            {"column": "email", "regex": r"\b\S+@\S+\.\S+\b", "replacement": "[REDACTED]"},
+        ])
+
+    @patch("jobs.tasks.SparkProcessingService")
+    @patch("jobs.tasks.StorageService")
+    @patch("jobs.tasks.LLMRegexService")
+    @patch("jobs.tasks.TriageService")
+    def test_spark_error_marks_failed(self, mock_triage, mock_regex, mock_storage, mock_spark):
+        mock_triage.triage.return_value = [
+            {"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"},
+        ]
+        mock_regex.get_or_generate_regex.return_value = r"\S+@\S+"
+        mock_storage.resolve_parquet_absolute_path.return_value = "/tmp/test.parquet"
+        mock_spark.process.side_effect = RuntimeError("Spark cluster unavailable")
+        job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact all emails")
+
+        from jobs.tasks import process_job
+        with self.assertRaises(RuntimeError):
+            process_job(job.id)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "FAILED")
+        self.assertIn("Spark cluster unavailable", job.error_message)
+
+    @patch("jobs.tasks.SparkProcessingService")
+    @patch("jobs.tasks.StorageService")
+    @patch("jobs.tasks.LLMRegexService")
+    @patch("jobs.tasks.TriageService")
+    def test_progress_callback_updates_job(self, mock_triage, mock_regex, mock_storage, mock_spark):
+        mock_triage.triage.return_value = [
+            {"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"},
+            {"column": "phone", "nl_pattern": "phone numbers", "replacement": "[PHONE]"},
+        ]
+        mock_regex.get_or_generate_regex.side_effect = [r"\S+@\S+", r"\d{3}-\d{4}"]
+        mock_storage.resolve_parquet_absolute_path.return_value = "/tmp/test.parquet"
+
+        def fake_process(parquet_path, specs, job_id, progress_callback=None, storage_dir=None):
+            if progress_callback:
+                progress_callback(50)
+                progress_callback(100)
+            return ("output/1/result", "output/1/preview.parquet")
+        mock_spark.process.side_effect = fake_process
+
+        job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact emails and phones")
+
+        from jobs.tasks import process_job
+        process_job(job.id)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "SUCCESS")
+        self.assertEqual(job.progress, 100.0)
 

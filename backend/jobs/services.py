@@ -3,6 +3,7 @@ import json
 import os
 import re
 import signal
+import pandas as pd
 from django.conf import settings
 from django.core.cache import cache
 from openai import OpenAI
@@ -70,6 +71,8 @@ class LLMRegexService:
             "You are an expert regular expression generator for PySpark data transformations. "
             "Convert the user's natural language pattern description into a precise, highly optimized, "
             "and valid Python/Java compatible regular expression. "
+            "The regex will be used with regexp_replace to find and replace patterns within longer strings, "
+            "so NEVER use ^ or $ anchors. "
             "Output ONLY the raw regex string. Do not include markdown code blocks, backticks, explanations, or quotes."
         )
 
@@ -238,3 +241,26 @@ class StorageService:
     @classmethod
     def resolve_absolute_path(cls, dataset: DatasetUpload) -> str:
         return os.path.join(cls.get_storage_base_dir(), os.path.basename(dataset.file_path))
+
+    @classmethod
+    def resolve_parquet_absolute_path(cls, dataset: DatasetUpload) -> str:
+        return os.path.join(cls.get_storage_base_dir(), os.path.basename(dataset.parquet_file_path))
+
+
+def paginate_result(output_file_path: str, page: int = 1, page_size: int = 50) -> dict:
+    """Read an output Parquet and return a paginated slice with iloc."""
+    base_dir = StorageService.get_storage_base_dir()
+    abs_path = os.path.join(base_dir, output_file_path)
+    df = pd.read_parquet(abs_path)
+    total_rows = len(df)
+    total_pages = max(1, (total_rows + page_size - 1) // page_size)
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * page_size
+    end = start + page_size
+    rows = df.iloc[start:end].to_dict(orient="records")
+    return {
+        "rows": rows,
+        "page": page,
+        "total_pages": total_pages,
+        "total_rows": total_rows,
+    }

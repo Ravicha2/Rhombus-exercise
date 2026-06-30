@@ -29,6 +29,7 @@ packages = ["core", "uploads", "jobs"]
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "core.settings"
 python_files = ["test_*.py", "tests_*.py"]
+markers = ["e2e: end-to-end tests requiring Docker + real LLM API key"]
 
 [dependency-groups]
 dev = [
