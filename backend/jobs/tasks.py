@@ -28,6 +28,13 @@ def process_job(self, job_id: int) -> None:
         logger.error("ProcessingJob %s not found", job_id)
         raise
 
+    # Retry recovery: reset partial state so the normal flow can re-execute
+    if job.status != "QUEUED":
+        job.status = "QUEUED"
+        job.error_message = None
+        job.progress = 0.0
+        job.save()
+
     job.mark_running(task_id=self.request.id)
 
     try:
