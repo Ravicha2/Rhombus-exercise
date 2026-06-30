@@ -1,13 +1,21 @@
-"""Evaluate generated regexes by calling get_or_generate_regex, then running re.sub against sample input."""
+"""Evaluate generated regexes by calling get_or_generate_regex, then running re.sub against sample input.
+
+Run with:  uv run pytest tests/jobs/tests_regex_eval.py -v -m e2e
+Skip with: uv run pytest tests/ -m "not e2e"
+"""
 import os
 import re
 from pathlib import Path
+
+import pytest
 from django.test import TestCase
 from django.core.cache import cache
 from dotenv import load_dotenv
 from jobs.services import LLMRegexService
 
 load_dotenv(Path(__file__).resolve().parent.parent.parent.parent / ".env")
+
+pytestmark = pytest.mark.e2e
 
 
 class RegexEvalTest(TestCase):
