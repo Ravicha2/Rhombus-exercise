@@ -94,7 +94,7 @@ curl http://localhost:8000/api/jobs/2/status/
 
 ## Job Lifecycle
 
-![Job Lifecycle Diagram](./docs/diagrams/job-lifecycle.drawio.png)
+![Job Lifecycle Diagram](./docs/diagrams/job-lifecycle.png)
 
 ---
 
