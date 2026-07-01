@@ -5,10 +5,12 @@ from jobs.models import ProcessingJob
 from jobs.services import (
     LLMRegexService,
     RegexSafetyError,
+    STATIC_TOOLS,
     SparkProcessingService,
     StorageService,
     TriageError,
     TriageService,
+    read_sample_rows,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,8 +43,12 @@ def process_job(self, job_id: int) -> None:
         dataset = job.dataset
         column_names = dataset.column_names or []
 
+        # Read sample data to help LLM understand actual data formats
+        parquet_path = StorageService.resolve_parquet_absolute_path(dataset)
+        sample_data = read_sample_rows(parquet_path)
+
         # Stage 1: Triage
-        transformations = TriageService.triage(job.nl_prompt, column_names)
+        transformations = TriageService.triage(job.nl_prompt, column_names, sample_data=sample_data)
         job.transformations = transformations
         job.save(update_fields=["transformations"])
 
@@ -50,31 +56,30 @@ def process_job(self, job_id: int) -> None:
         if job.status == "CANCELLED":
             return
 
-        # Stage 2: Regex generation
-        generated_regexes = []
+        # Stage 2: Regex generation (skip for static tools)
+        generated = []
         for t in transformations:
-            regex = LLMRegexService.get_or_generate_regex(t["nl_pattern"])
-            generated_regexes.append({"column": t["column"], "regex": regex})
-        job.generated_regexes = generated_regexes
+            if t["replacement"] in STATIC_TOOLS:
+                generated.append({"column": t["column"], "tool": t["replacement"]})
+            else:
+                regex = LLMRegexService.get_or_generate_regex(t["nl_pattern"], sample_data=sample_data)
+                generated.append({"column": t["column"], "regex": regex})
+        job.generated_regexes = generated
         job.save(update_fields=["generated_regexes"])
 
         job.refresh_from_db()
         if job.status == "CANCELLED":
             return
 
-        # Stage 3: Build Spark specs by merging transformations with regexes
-        specs = [
-            {
-                "column": t["column"],
-                "regex": g["regex"],
-                "replacement": t["replacement"],
-            }
-            for t, g in zip(transformations, generated_regexes)
-        ]
+        # Stage 3: Build Spark specs
+        specs = []
+        for t, g in zip(transformations, generated):
+            if "tool" in g:
+                specs.append({"column": t["column"], "tool": g["tool"]})
+            else:
+                specs.append({"column": t["column"], "regex": g["regex"], "replacement": t["replacement"]})
 
         # Stage 4: Spark processing
-        parquet_path = StorageService.resolve_parquet_absolute_path(dataset)
-
         job.refresh_from_db()
         if job.status == "CANCELLED":
             return

@@ -22,6 +22,15 @@ class TriageError(Exception):
 _REGEX_SAFETY_TIMEOUT = 2  # seconds
 _REGEX_SAFETY_TEST_STRING = "a" * 30  # short string to detect pathological patterns
 
+# ponytail: dict dispatch for static transforms, no framework needed
+STATIC_TOOLS = {
+    "truncate": lambda col: F.substring(col, 1, 10),
+    "uppercase": lambda col: F.upper(col),
+    "lowercase": lambda col: F.lower(col),
+    "strip": lambda col: F.trim(col),
+    "fill_nulls": lambda col: F.coalesce(col, F.lit("")),
+}
+
 
 def _regex_timeout_handler(signum, frame):
     raise RegexSafetyError(
@@ -54,8 +63,9 @@ class LLMRegexService:
             signal.signal(signal.SIGALRM, old_handler)
 
     @classmethod
-    def get_or_generate_regex(cls, natural_language_prompt: str) -> str:
-        prompt_hash = hashlib.sha256(natural_language_prompt.encode()).hexdigest()
+    def get_or_generate_regex(cls, natural_language_prompt: str, sample_data: str | None = None) -> str:
+        cache_input = natural_language_prompt + (sample_data or "")
+        prompt_hash = hashlib.sha256(cache_input.encode()).hexdigest()
         cache_key = f"{cls.CACHE_PREFIX}{prompt_hash}"
         cached_regex = cache.get(cache_key)
         if cached_regex:
@@ -76,11 +86,15 @@ class LLMRegexService:
             "Output ONLY the raw regex string. Do not include markdown code blocks, backticks, explanations, or quotes."
         )
 
+        user_content = natural_language_prompt
+        if sample_data:
+            user_content += f"\n\nHere are sample rows from the dataset:\n{sample_data}"
+
         response = client.chat.completions.create(
             model="deepseek/deepseek-v4-flash",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": natural_language_prompt}
+                {"role": "user", "content": user_content}
             ],
             temperature=0.1,
         )
@@ -105,7 +119,7 @@ class LLMRegexService:
 
 class TriageService:
     @classmethod
-    def triage(cls, natural_language_prompt: str, column_names: list[str]) -> list[dict]:
+    def triage(cls, natural_language_prompt: str, column_names: list[str], sample_data: str | None = None) -> list[dict]:
         """Parse a natural language prompt into structured transformations.
 
         Calls the LLM with the dataset column names as context, parses the JSON
@@ -129,15 +143,27 @@ class TriageService:
             api_key=api_key
         )
 
+        sample_section = ""
+        if sample_data:
+            sample_section = (
+                f"\n\nHere are sample rows from the dataset:\n{sample_data}"
+            )
+
         system_prompt = (
             "You are an expert data transformation analyst. "
             "Given a natural language prompt and a list of column names from a dataset, "
             "identify which columns the user wants to transform, what pattern to match in each column, "
-            "and what replacement value to use (empty string if no replacement is specified). "
+            "and what replacement value to use. "
+            "When the user says 'redact', 'remove', or 'mask' without specifying a replacement, use '[REDACTED]'. "
+            "Static transformations: when the user's intent matches one of these operations, "
+            "set 'replacement' to the exact tool name instead of a literal value: "
+            "truncate (shorten to 10 chars), uppercase, lowercase, strip (trim whitespace), fill_nulls (replace nulls with empty string). "
+            "For all other intents, set 'replacement' to the literal replacement string the user wants. "
             "Respond with ONLY a JSON array of objects. Each object must have exactly three keys: "
             "'column' (string), 'nl_pattern' (string), and 'replacement' (string). "
             "Do not include markdown code blocks, explanations, or any other text. "
             f"The dataset has the following columns: {', '.join(column_names)}."
+            f"{sample_section}"
         )
 
         response = client.chat.completions.create(
@@ -209,9 +235,13 @@ class SparkProcessingService:
         # degenerate Catalyst plans (SPARK-17006).
         exprs = {col: F.col(col) for col in df.columns}
         for i, spec in enumerate(specs, 1):
-            exprs[spec["column"]] = F.regexp_replace(
-                F.col(spec["column"]), spec["regex"], spec["replacement"]
-            )
+            col = F.col(spec["column"])
+            if "tool" in spec:
+                exprs[spec["column"]] = STATIC_TOOLS[spec["tool"]](col)
+            else:
+                exprs[spec["column"]] = F.regexp_replace(
+                    col, spec["regex"], spec["replacement"]
+                )
             if progress_callback and total > 0:
                 progress_callback(round(i / total * 100))
         df = df.select(*[expr.alias(col) for col, expr in exprs.items()])
@@ -245,6 +275,18 @@ class StorageService:
     @classmethod
     def resolve_parquet_absolute_path(cls, dataset: DatasetUpload) -> str:
         return os.path.join(cls.get_storage_base_dir(), os.path.basename(dataset.parquet_file_path))
+
+
+def read_sample_rows(parquet_path: str, n: int = 3) -> str | None:
+    """Read n sample rows from a parquet file, formatted as a table string for LLM context.
+
+    Returns None if the file can't be read (graceful degradation).
+    """
+    try:
+        df = pd.read_parquet(parquet_path).head(n)
+        return df.to_string(index=False)
+    except Exception:
+        return None
 
 
 def paginate_result(output_file_path: str, page: int = 1, page_size: int = 50) -> dict:
