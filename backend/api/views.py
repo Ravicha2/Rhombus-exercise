@@ -16,6 +16,25 @@ from uploads.models import DatasetUpload
 from uploads.services import NormalizationService
 
 
+class JobListView(View):
+    def get(self, request):
+        jobs = ProcessingJob.objects.select_related("dataset").order_by("-created_at")
+        data = [
+            {
+                "id": j.id,
+                "status": j.status,
+                "progress": j.progress,
+                "nl_prompt": j.nl_prompt,
+                "created_at": j.created_at.isoformat(),
+                "updated_at": j.updated_at.isoformat(),
+                "error_message": j.error_message,
+                "file_path": j.dataset.file_path,
+            }
+            for j in jobs
+        ]
+        return JsonResponse(data, safe=False)
+
+
 @method_decorator(csrf_exempt, name="dispatch")
 class UploadView(View):
     def get(self, request):
