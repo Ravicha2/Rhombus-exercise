@@ -342,6 +342,91 @@ class ProcessJobRetryResetTest(TestCase):
         self.assertEqual(job.status, "CANCELLED")
 
 
+class ProcessJobCancellationTest(TestCase):
+    """Cooperative cancellation: task checks job.status between stages and returns cleanly if CANCELLED."""
+
+    def setUp(self):
+        cache.clear()
+        self.dataset = DatasetUpload.objects.create(
+            file_path="uploads/test.csv",
+            status="READY",
+            column_names=["email"],
+        )
+
+    @patch("jobs.tasks.SparkProcessingService")
+    @patch("jobs.tasks.StorageService")
+    @patch("jobs.tasks.LLMRegexService")
+    @patch("jobs.tasks.TriageService")
+    def test_cancelled_after_triage_returns_cleanly(self, mock_triage, mock_regex, mock_storage, mock_spark):
+        """If job is cancelled after triage, task returns without calling regex or spark."""
+        job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact emails")
+
+        def triage_and_cancel(*args, **kwargs):
+            ProcessingJob.objects.filter(id=job.id).update(status="CANCELLED")
+            return [{"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"}]
+
+        mock_triage.triage.side_effect = triage_and_cancel
+
+        from jobs.tasks import process_job
+        process_job(job.id)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "CANCELLED")
+        mock_regex.get_or_generate_regex.assert_not_called()
+        mock_spark.process.assert_not_called()
+
+    @patch("jobs.tasks.SparkProcessingService")
+    @patch("jobs.tasks.StorageService")
+    @patch("jobs.tasks.LLMRegexService")
+    @patch("jobs.tasks.TriageService")
+    def test_cancelled_after_regex_returns_cleanly(self, mock_triage, mock_regex, mock_storage, mock_spark):
+        """If job is cancelled after regex generation, task returns without calling spark."""
+        job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact emails")
+
+        mock_triage.triage.return_value = [
+            {"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"},
+        ]
+
+        def regex_and_cancel(*args, **kwargs):
+            ProcessingJob.objects.filter(id=job.id).update(status="CANCELLED")
+            return r"\b\S+@\S+\.\S+\b"
+
+        mock_regex.get_or_generate_regex.side_effect = regex_and_cancel
+
+        from jobs.tasks import process_job
+        process_job(job.id)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "CANCELLED")
+        mock_spark.process.assert_not_called()
+
+    @patch("jobs.tasks.SparkProcessingService")
+    @patch("jobs.tasks.StorageService")
+    @patch("jobs.tasks.LLMRegexService")
+    @patch("jobs.tasks.TriageService")
+    def test_cancelled_before_spark_returns_cleanly(self, mock_triage, mock_regex, mock_storage, mock_spark):
+        """If job is cancelled before spark processing, task returns cleanly."""
+        job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact emails")
+
+        mock_triage.triage.return_value = [
+            {"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"},
+        ]
+        mock_regex.get_or_generate_regex.return_value = r"\b\S+@\S+\.\S+\b"
+
+        def resolve_path_and_cancel(*args, **kwargs):
+            ProcessingJob.objects.filter(id=job.id).update(status="CANCELLED")
+            return "/tmp/test.parquet"
+
+        mock_storage.resolve_parquet_absolute_path.side_effect = resolve_path_and_cancel
+
+        from jobs.tasks import process_job
+        process_job(job.id)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "CANCELLED")
+        mock_spark.process.assert_not_called()
+
+
 class ProcessJobDeterministicErrorTest(TestCase):
     def setUp(self):
         cache.clear()

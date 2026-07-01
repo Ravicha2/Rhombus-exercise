@@ -44,7 +44,11 @@ def process_job(self, job_id: int) -> None:
         # Stage 1: Triage
         transformations = TriageService.triage(job.nl_prompt, column_names)
         job.transformations = transformations
-        job.save()
+        job.save(update_fields=["transformations"])
+
+        job.refresh_from_db()
+        if job.status == "CANCELLED":
+            return
 
         # Stage 2: Regex generation
         generated_regexes = []
@@ -52,7 +56,11 @@ def process_job(self, job_id: int) -> None:
             regex = LLMRegexService.get_or_generate_regex(t["nl_pattern"])
             generated_regexes.append({"column": t["column"], "regex": regex})
         job.generated_regexes = generated_regexes
-        job.save()
+        job.save(update_fields=["generated_regexes"])
+
+        job.refresh_from_db()
+        if job.status == "CANCELLED":
+            return
 
         # Stage 3: Build Spark specs by merging transformations with regexes
         specs = [
@@ -66,6 +74,10 @@ def process_job(self, job_id: int) -> None:
 
         # Stage 4: Spark processing
         parquet_path = StorageService.resolve_parquet_absolute_path(dataset)
+
+        job.refresh_from_db()
+        if job.status == "CANCELLED":
+            return
 
         def progress_callback(pct: int) -> None:
             job.update_progress(pct)
