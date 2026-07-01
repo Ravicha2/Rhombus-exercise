@@ -31,7 +31,7 @@ __Retry__: `autoretry_for=(APIConnectionError, RateLimitError, APITimeoutError)`
 
 __Cancellation__: Add `CANCELLED` as a terminal status (`QUEUED → CANCELLED`, `RUNNING → CANCELLED`). `mark_cancelled()` sets `error_message="Cancelled by user"`. Task checks `job.status == CANCELLED` from DB between stages and returns cleanly (no exception). Cancel endpoint sets status to CANCELLED first, then calls `revoke(task_id, terminate=True)` as a safety net.
 
-**API**: Centralized `api` app with `views.py` and `urls.py` containing all endpoints. `UploadView` moves from `uploads` app. Manual dict responses, no DRF serializers. Error format: `{"error": "message"}`. No authentication.
+**API**: Centralized `api` app with `views.py` and `urls.py` containing all endpoints. `UploadView` moves from `uploads` app. Manual dict responses, no DRF serializers. Error format: `{"error": "message"}`. No authentication. Job endpoints accept `application/json` body (not form data) since they send structured data, not file uploads.
 
 **Endpoints**:
 

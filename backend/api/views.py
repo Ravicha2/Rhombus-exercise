@@ -1,3 +1,4 @@
+import json
 import os
 import uuid
 
@@ -7,6 +8,8 @@ from django.views import View
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 
+from jobs.models import ProcessingJob
+from jobs.tasks import process_job
 from uploads.models import DatasetUpload
 from uploads.tasks import normalize_upload
 
@@ -48,3 +51,41 @@ class UploadView(View):
             },
             status=201,
         )
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class JobStartView(View):
+    def post(self, request):
+        try:
+            body = json.loads(request.body)
+        except (json.JSONDecodeError, ValueError):
+            return JsonResponse({"error": "Invalid JSON body."}, status=400)
+
+        upload_id = body.get("upload_id")
+        nl_prompt = body.get("nl_prompt")
+
+        if upload_id is None:
+            return JsonResponse({"error": "upload_id is required."}, status=400)
+        if not nl_prompt:
+            return JsonResponse({"error": "nl_prompt is required and must be non-empty."}, status=400)
+
+        try:
+            upload = DatasetUpload.objects.get(id=upload_id)
+        except DatasetUpload.DoesNotExist:
+            return JsonResponse({"error": f"Upload {upload_id} not found."}, status=404)
+
+        if upload.status != "READY":
+            return JsonResponse(
+                {"error": f"Upload is {upload.status}, not READY."},
+                status=400,
+            )
+
+        job = ProcessingJob.objects.create(
+            dataset=upload,
+            nl_prompt=nl_prompt,
+        )
+        result = process_job.delay(job.id)
+        job.task_id = result.id
+        job.save(update_fields=["task_id"])
+
+        return JsonResponse({"id": job.id, "status": job.status}, status=201)
