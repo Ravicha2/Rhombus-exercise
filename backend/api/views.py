@@ -89,3 +89,20 @@ class JobStartView(View):
         job.save(update_fields=["task_id"])
 
         return JsonResponse({"id": job.id, "status": job.status}, status=201)
+
+
+class JobStatusView(View):
+    def get(self, request, id):
+        try:
+            job = ProcessingJob.objects.get(id=id)
+        except ProcessingJob.DoesNotExist:
+            return JsonResponse({"error": f"Job {id} not found."}, status=404)
+
+        return JsonResponse({
+            "id": job.id,
+            "status": job.status,
+            "progress": job.progress,
+            "error_message": job.error_message,
+            "created_at": job.created_at.isoformat(),
+            "updated_at": job.updated_at.isoformat(),
+        })
