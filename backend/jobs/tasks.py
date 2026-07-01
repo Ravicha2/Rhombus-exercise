@@ -1,5 +1,6 @@
 import logging
 from celery import shared_task
+from openai import APIConnectionError, RateLimitError, APITimeoutError
 from jobs.models import ProcessingJob
 from jobs.services import (
     LLMRegexService,
@@ -13,7 +14,12 @@ from jobs.services import (
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True)
+@shared_task(
+    bind=True,
+    autoretry_for=(APIConnectionError, RateLimitError, APITimeoutError),
+    retry_backoff=True,
+    max_retries=3,
+)
 def process_job(self, job_id: int) -> None:
     """Orchestrate triage -> regex generation -> Spark processing for a ProcessingJob."""
     try:
@@ -21,6 +27,13 @@ def process_job(self, job_id: int) -> None:
     except ProcessingJob.DoesNotExist:
         logger.error("ProcessingJob %s not found", job_id)
         raise
+
+    # Retry recovery: reset partial state so the normal flow can re-execute
+    if job.status in ("RUNNING", "FAILED"):
+        job.status = "QUEUED"
+        job.error_message = None
+        job.progress = 0.0
+        job.save()
 
     job.mark_running(task_id=self.request.id)
 
@@ -31,7 +44,11 @@ def process_job(self, job_id: int) -> None:
         # Stage 1: Triage
         transformations = TriageService.triage(job.nl_prompt, column_names)
         job.transformations = transformations
-        job.save()
+        job.save(update_fields=["transformations"])
+
+        job.refresh_from_db()
+        if job.status == "CANCELLED":
+            return
 
         # Stage 2: Regex generation
         generated_regexes = []
@@ -39,7 +56,11 @@ def process_job(self, job_id: int) -> None:
             regex = LLMRegexService.get_or_generate_regex(t["nl_pattern"])
             generated_regexes.append({"column": t["column"], "regex": regex})
         job.generated_regexes = generated_regexes
-        job.save()
+        job.save(update_fields=["generated_regexes"])
+
+        job.refresh_from_db()
+        if job.status == "CANCELLED":
+            return
 
         # Stage 3: Build Spark specs by merging transformations with regexes
         specs = [
@@ -53,6 +74,10 @@ def process_job(self, job_id: int) -> None:
 
         # Stage 4: Spark processing
         parquet_path = StorageService.resolve_parquet_absolute_path(dataset)
+
+        job.refresh_from_db()
+        if job.status == "CANCELLED":
+            return
 
         def progress_callback(pct: int) -> None:
             job.update_progress(pct)

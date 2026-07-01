@@ -10,7 +10,7 @@ accepted
 
 ### Retry
 
-- **`autoretry_for` on task decorator with whole-task reset**: Celery handles backoff and retry count. On retry, reset job to QUEUED so the normal flow re-marks it RUNNING. LLM cache makes re-running triage/regex cheap.
+- __`autoretry_for` on task decorator with whole-task reset__: Celery handles backoff and retry count. On retry, reset job to QUEUED so the normal flow re-marks it RUNNING. LLM cache makes re-running triage/regex cheap.
 - **`self.retry()` per exception in task body**: More control over per-exception backoff, but more code for no clear benefit.
 - **Per-call LLM retry within the task**: Wrap individual LLM calls in retry loops. Avoids re-running completed stages, but the LLM Redis cache already makes re-runs cheap. Refactor target for later if latency or cost matters.
 
@@ -27,13 +27,14 @@ accepted
 
 ## Decision
 
-**Retry**: `autoretry_for=(APIConnectionError, RateLimitError, APITimeoutError)` on the `@shared_task` decorator with `retry_backoff=True, max_retries=3`. At task start, if `job.status == "RUNNING"` (indicates a retry), reset to `QUEUED` with `error_message=None` and `progress=0.0`. Deterministic errors (`TriageError`, `ValueError`, `RegexSafetyError`) fail immediately, no retry.
+__Retry__: `autoretry_for=(APIConnectionError, RateLimitError, APITimeoutError)` on the `@shared_task` decorator with `retry_backoff=True, max_retries=3`. At task start, if `job.status != "QUEUED"` (indicates a retry), reset to `QUEUED` with `error_message=None` and `progress=0.0`. Deterministic errors (`TriageError`, `ValueError`, `RegexSafetyError`) fail immediately, no retry.
 
-**Cancellation**: Add `CANCELLED` as a terminal status (`QUEUED → CANCELLED`, `RUNNING → CANCELLED`). `mark_cancelled()` sets `error_message="Cancelled by user"`. Task checks `job.status == CANCELLED` from DB between stages and returns cleanly (no exception). Cancel endpoint sets status to CANCELLED first, then calls `revoke(task_id, terminate=True)` as a safety net.
+__Cancellation__: Add `CANCELLED` as a terminal status (`QUEUED → CANCELLED`, `RUNNING → CANCELLED`). `mark_cancelled()` sets `error_message="Cancelled by user"`. Task checks `job.status == CANCELLED` from DB between stages and returns cleanly (no exception). Cancel endpoint sets status to CANCELLED first, then calls `revoke(task_id, terminate=True)` as a safety net.
 
-**API**: Centralized `api` app with `views.py` and `urls.py` containing all endpoints. `UploadView` moves from `uploads` app. Manual dict responses, no DRF serializers. Error format: `{"error": "message"}`. No authentication.
+**API**: Centralized `api` app with `views.py` and `urls.py` containing all endpoints. `UploadView` moves from `uploads` app. Manual dict responses, no DRF serializers. Error format: `{"error": "message"}`. No authentication. Job endpoints accept `application/json` body (not form data) since they send structured data, not file uploads.
 
 **Endpoints**:
+
 - `POST /api/jobs/start/` — takes `{upload_id, nl_prompt}`, validates upload exists/READY, stores `task_id` from `delay()` result, returns `{id, status}`.
 - `GET /api/jobs/<int:id>/status/` — returns `{id, status, progress, error_message, created_at, updated_at}`.
 - `GET /api/jobs/<int:id>/results/` — returns `{id, status, column_names, transformations, generated_regexes, rows, page, total_pages, total_rows}`. Only for SUCCESS jobs; returns 400 for other statuses.

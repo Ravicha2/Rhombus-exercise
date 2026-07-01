@@ -9,6 +9,7 @@ class ProcessingJob(models.Model):
         ("RUNNING", "RUNNING"),
         ("SUCCESS", "SUCCESS"),
         ("FAILED", "FAILED"),
+        ("CANCELLED", "CANCELLED"),
     ]
 
     dataset = models.ForeignKey(DatasetUpload, on_delete=models.CASCADE, related_name="jobs")
@@ -25,10 +26,11 @@ class ProcessingJob(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     VALID_TRANSITIONS = {
-        "QUEUED": ["RUNNING", "FAILED"],
-        "RUNNING": ["SUCCESS", "FAILED"],
+        "QUEUED": ["RUNNING", "FAILED", "CANCELLED"],
+        "RUNNING": ["SUCCESS", "FAILED", "CANCELLED"],
         "SUCCESS": [],
         "FAILED": [],
+        "CANCELLED": [],
     }
 
     def _transition(self, new_status, **kwargs):
@@ -63,6 +65,9 @@ class ProcessingJob(models.Model):
 
     def mark_failed(self, error_message):
         self._transition("FAILED", error_message=error_message)
+
+    def mark_cancelled(self):
+        self._transition("CANCELLED", error_message="Cancelled by user")
 
     def __str__(self):
         return f"ProcessingJob {self.id} ({self.status}) - Progress: {self.progress}%"

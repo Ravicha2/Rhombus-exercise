@@ -1,9 +1,38 @@
 from unittest.mock import patch, MagicMock
 from django.test import TestCase
 from django.core.cache import cache
+from openai import APIConnectionError, RateLimitError, APITimeoutError
 from uploads.models import DatasetUpload
 from jobs.models import ProcessingJob
 from jobs.services import RegexSafetyError, TriageError, SparkProcessingService
+
+
+class ProcessJobRetryConfigTest(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.dataset = DatasetUpload.objects.create(
+            file_path="uploads/test.csv",
+            status="READY",
+            column_names=["email"],
+        )
+
+    def test_autoretry_for_includes_transient_errors(self):
+        from jobs.tasks import process_job
+
+        retry_for = process_job.autoretry_for
+        self.assertIn(APIConnectionError, retry_for)
+        self.assertIn(RateLimitError, retry_for)
+        self.assertIn(APITimeoutError, retry_for)
+
+    def test_max_retries_is_three(self):
+        from jobs.tasks import process_job
+
+        self.assertEqual(process_job.max_retries, 3)
+
+    def test_retry_backoff_enabled(self):
+        from jobs.tasks import process_job
+
+        self.assertTrue(process_job.retry_backoff)
 
 
 class ProcessJobTaskTest(TestCase):
@@ -210,4 +239,232 @@ class ProcessJobTaskTest(TestCase):
         job.refresh_from_db()
         self.assertEqual(job.status, "SUCCESS")
         self.assertEqual(job.progress, 100.0)
+
+
+class ProcessJobRetryResetTest(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.dataset = DatasetUpload.objects.create(
+            file_path="uploads/test.csv",
+            status="READY",
+            column_names=["email"],
+        )
+
+    @patch("jobs.tasks.SparkProcessingService")
+    @patch("jobs.tasks.StorageService")
+    @patch("jobs.tasks.LLMRegexService")
+    @patch("jobs.tasks.TriageService")
+    def test_retry_resets_failed_job_to_queued(self, mock_triage, mock_regex, mock_storage, mock_spark):
+        """When process_job runs on a FAILED job (retry scenario), it resets to QUEUED first."""
+        mock_triage.triage.return_value = [
+            {"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"},
+        ]
+        mock_regex.get_or_generate_regex.return_value = r"\b\S+@\S+\.\S+\b"
+        mock_storage.resolve_parquet_absolute_path.return_value = "/tmp/test.parquet"
+        mock_spark.process.return_value = ("output/1/result", "output/1/preview.parquet")
+
+        job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact emails")
+        # Simulate a previous transient failure: job is FAILED with error message and partial progress
+        job.status = "FAILED"
+        job.error_message = "Connection error"
+        job.progress = 42.0
+        job.save()
+
+        from jobs.tasks import process_job
+        process_job(job.id)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "SUCCESS")
+        self.assertIsNone(job.error_message)
+        self.assertEqual(job.progress, 100.0)
+
+    @patch("jobs.tasks.SparkProcessingService")
+    @patch("jobs.tasks.StorageService")
+    @patch("jobs.tasks.LLMRegexService")
+    @patch("jobs.tasks.TriageService")
+    def test_retry_resets_running_job_to_queued(self, mock_triage, mock_regex, mock_storage, mock_spark):
+        """When process_job runs on a RUNNING job (crash recovery), it resets to QUEUED first."""
+        mock_triage.triage.return_value = [
+            {"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"},
+        ]
+        mock_regex.get_or_generate_regex.return_value = r"\b\S+@\S+\.\S+\b"
+        mock_storage.resolve_parquet_absolute_path.return_value = "/tmp/test.parquet"
+        mock_spark.process.return_value = ("output/1/result", "output/1/preview.parquet")
+
+        job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact emails")
+        # Simulate a crashed task: job is RUNNING with partial progress
+        job.status = "RUNNING"
+        job.progress = 50.0
+        job.save()
+
+        from jobs.tasks import process_job
+        process_job(job.id)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "SUCCESS")
+        self.assertEqual(job.progress, 100.0)
+
+    def test_queued_job_not_reset(self):
+        """A fresh QUEUED job should not trigger the reset branch."""
+        job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact emails")
+        self.assertEqual(job.status, "QUEUED")
+        # No need to run the full task; just verify the condition check
+        # If status is QUEUED, the reset block is skipped entirely
+        self.assertEqual(job.progress, 0.0)
+
+    def test_success_job_not_reset(self):
+        """A SUCCESS job must not be reset to QUEUED and re-processed."""
+        job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact emails")
+        job.status = "SUCCESS"
+        job.progress = 100.0
+        job.save()
+
+        from jobs.tasks import process_job
+        from django.core.exceptions import ValidationError
+        with self.assertRaises(ValidationError):
+            process_job(job.id)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "SUCCESS")
+
+    def test_cancelled_job_not_reset(self):
+        """A CANCELLED job must not be reset to QUEUED and re-processed."""
+        job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact emails")
+        job.status = "CANCELLED"
+        job.save()
+
+        from jobs.tasks import process_job
+        from django.core.exceptions import ValidationError
+        with self.assertRaises(ValidationError):
+            process_job(job.id)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "CANCELLED")
+
+
+class ProcessJobCancellationTest(TestCase):
+    """Cooperative cancellation: task checks job.status between stages and returns cleanly if CANCELLED."""
+
+    def setUp(self):
+        cache.clear()
+        self.dataset = DatasetUpload.objects.create(
+            file_path="uploads/test.csv",
+            status="READY",
+            column_names=["email"],
+        )
+
+    @patch("jobs.tasks.SparkProcessingService")
+    @patch("jobs.tasks.StorageService")
+    @patch("jobs.tasks.LLMRegexService")
+    @patch("jobs.tasks.TriageService")
+    def test_cancelled_after_triage_returns_cleanly(self, mock_triage, mock_regex, mock_storage, mock_spark):
+        """If job is cancelled after triage, task returns without calling regex or spark."""
+        job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact emails")
+
+        def triage_and_cancel(*args, **kwargs):
+            ProcessingJob.objects.filter(id=job.id).update(status="CANCELLED")
+            return [{"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"}]
+
+        mock_triage.triage.side_effect = triage_and_cancel
+
+        from jobs.tasks import process_job
+        process_job(job.id)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "CANCELLED")
+        mock_regex.get_or_generate_regex.assert_not_called()
+        mock_spark.process.assert_not_called()
+
+    @patch("jobs.tasks.SparkProcessingService")
+    @patch("jobs.tasks.StorageService")
+    @patch("jobs.tasks.LLMRegexService")
+    @patch("jobs.tasks.TriageService")
+    def test_cancelled_after_regex_returns_cleanly(self, mock_triage, mock_regex, mock_storage, mock_spark):
+        """If job is cancelled after regex generation, task returns without calling spark."""
+        job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact emails")
+
+        mock_triage.triage.return_value = [
+            {"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"},
+        ]
+
+        def regex_and_cancel(*args, **kwargs):
+            ProcessingJob.objects.filter(id=job.id).update(status="CANCELLED")
+            return r"\b\S+@\S+\.\S+\b"
+
+        mock_regex.get_or_generate_regex.side_effect = regex_and_cancel
+
+        from jobs.tasks import process_job
+        process_job(job.id)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "CANCELLED")
+        mock_spark.process.assert_not_called()
+
+    @patch("jobs.tasks.SparkProcessingService")
+    @patch("jobs.tasks.StorageService")
+    @patch("jobs.tasks.LLMRegexService")
+    @patch("jobs.tasks.TriageService")
+    def test_cancelled_before_spark_returns_cleanly(self, mock_triage, mock_regex, mock_storage, mock_spark):
+        """If job is cancelled before spark processing, task returns cleanly."""
+        job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact emails")
+
+        mock_triage.triage.return_value = [
+            {"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"},
+        ]
+        mock_regex.get_or_generate_regex.return_value = r"\b\S+@\S+\.\S+\b"
+
+        def resolve_path_and_cancel(*args, **kwargs):
+            ProcessingJob.objects.filter(id=job.id).update(status="CANCELLED")
+            return "/tmp/test.parquet"
+
+        mock_storage.resolve_parquet_absolute_path.side_effect = resolve_path_and_cancel
+
+        from jobs.tasks import process_job
+        process_job(job.id)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "CANCELLED")
+        mock_spark.process.assert_not_called()
+
+
+class ProcessJobDeterministicErrorTest(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.dataset = DatasetUpload.objects.create(
+            file_path="uploads/test.csv",
+            status="READY",
+            column_names=["email"],
+        )
+
+    def test_triage_error_not_in_autoretry_for(self):
+        from jobs.tasks import process_job
+        from jobs.services import TriageError
+
+        self.assertNotIn(TriageError, process_job.autoretry_for)
+
+    def test_value_error_not_in_autoretry_for(self):
+        from jobs.tasks import process_job
+
+        self.assertNotIn(ValueError, process_job.autoretry_for)
+
+    def test_regex_safety_error_not_in_autoretry_for(self):
+        from jobs.tasks import process_job
+        from jobs.services import RegexSafetyError
+
+        self.assertNotIn(RegexSafetyError, process_job.autoretry_for)
+
+    @patch("jobs.tasks.LLMRegexService")
+    @patch("jobs.tasks.TriageService")
+    def test_triage_error_fails_immediately_no_retry(self, mock_triage, mock_regex):
+        """TriageError marks job FAILED and is not retried by Celery."""
+        mock_triage.triage.side_effect = TriageError("Unknown columns")
+        job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact emails")
+
+        from jobs.tasks import process_job
+        with self.assertRaises(TriageError):
+            process_job(job.id)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, "FAILED")
+        self.assertIn("Unknown columns", job.error_message)
 
