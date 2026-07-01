@@ -8,7 +8,9 @@ from django.views import View
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 
+from celery import current_app
 from jobs.models import ProcessingJob
+from jobs.services import paginate_result
 from jobs.tasks import process_job
 from uploads.models import DatasetUpload
 from uploads.tasks import normalize_upload
@@ -97,6 +99,62 @@ class JobStatusView(View):
             job = ProcessingJob.objects.get(id=id)
         except ProcessingJob.DoesNotExist:
             return JsonResponse({"error": f"Job {id} not found."}, status=404)
+
+        return JsonResponse({
+            "id": job.id,
+            "status": job.status,
+            "progress": job.progress,
+            "error_message": job.error_message,
+            "created_at": job.created_at.isoformat(),
+            "updated_at": job.updated_at.isoformat(),
+        })
+
+
+class JobResultsView(View):
+    def get(self, request, id):
+        try:
+            job = ProcessingJob.objects.get(id=id)
+        except ProcessingJob.DoesNotExist:
+            return JsonResponse({"error": f"Job {id} not found."}, status=404)
+
+        if job.status != "SUCCESS":
+            return JsonResponse(
+                {"error": f"Job is {job.status}, not SUCCESS."},
+                status=400,
+            )
+
+        page = int(request.GET.get("page", 1))
+        page_size = int(request.GET.get("page_size", 50))
+        paginated = paginate_result(job.output_file_path, page, page_size)
+
+        return JsonResponse({
+            "id": job.id,
+            "status": job.status,
+            "column_names": job.dataset.column_names,
+            "transformations": job.transformations,
+            "generated_regexes": job.generated_regexes,
+            **paginated,
+        })
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class JobCancelView(View):
+    def post(self, request, id):
+        try:
+            job = ProcessingJob.objects.get(id=id)
+        except ProcessingJob.DoesNotExist:
+            return JsonResponse({"error": f"Job {id} not found."}, status=404)
+
+        if job.status in ("SUCCESS", "FAILED", "CANCELLED"):
+            return JsonResponse(
+                {"error": f"Cannot cancel job in {job.status} status."},
+                status=400,
+            )
+
+        job.mark_cancelled()
+
+        if job.task_id:
+            current_app.control.revoke(job.task_id, terminate=True)
 
         return JsonResponse({
             "id": job.id,
