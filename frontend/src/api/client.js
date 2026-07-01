@@ -33,6 +33,11 @@ export async function startJob(uploadId, nlPrompt) {
   return handleResponse(response);
 }
 
+export async function listJobs() {
+  const response = await fetch(`${API_BASE}/jobs/`);
+  return handleResponse(response);
+}
+
 export async function getJobStatus(id) {
   const response = await fetch(`${API_BASE}/jobs/${id}/status/`);
   return handleResponse(response);
