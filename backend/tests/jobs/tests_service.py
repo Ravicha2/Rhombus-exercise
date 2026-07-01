@@ -72,7 +72,7 @@ class TriageServiceTest(TestCase):
     def test_triage_single_column(self, mock_openai_class):
         column_names = ["email", "name", "phone"]
         prompt = "redact all emails"
-        mock_response_content = '[{"column": "email", "nl_pattern": "redact all emails", "replacement": "[REDACTED]"}]'
+        mock_response_content = '[{"column": "email", "nl_pattern": "redact all emails", "type": "literal", "value": "[REDACTED]"}]'
 
         mock_client = MagicMock()
         mock_response = MagicMock()
@@ -84,7 +84,8 @@ class TriageServiceTest(TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["column"], "email")
         self.assertEqual(result[0]["nl_pattern"], "redact all emails")
-        self.assertEqual(result[0]["replacement"], "[REDACTED]")
+        self.assertEqual(result[0]["type"], "literal")
+        self.assertEqual(result[0]["value"], "[REDACTED]")
         mock_client.chat.completions.create.assert_called_once()
 
     @patch('jobs.services.OpenAI')
@@ -92,8 +93,8 @@ class TriageServiceTest(TestCase):
         column_names = ["email", "name", "phone", "address"]
         prompt = "redact emails and phone numbers"
         mock_response_content = (
-            '[{"column": "email", "nl_pattern": "redact emails", "replacement": "[EMAIL]"},'
-            ' {"column": "phone", "nl_pattern": "redact phone numbers", "replacement": "[PHONE]"}]'
+            '[{"column": "email", "nl_pattern": "redact emails", "type": "literal", "value": "[EMAIL]"},'
+            ' {"column": "phone", "nl_pattern": "redact phone numbers", "type": "literal", "value": "[PHONE]"}]'
         )
 
         mock_client = MagicMock()
@@ -111,7 +112,7 @@ class TriageServiceTest(TestCase):
     def test_triage_unknown_column_raises(self, mock_openai_class):
         column_names = ["email", "name"]
         prompt = "redact all ssns"
-        mock_response_content = '[{"column": "ssn", "nl_pattern": "redact all ssns", "replacement": "[REDACTED]"}]'
+        mock_response_content = '[{"column": "ssn", "nl_pattern": "redact all ssns", "type": "literal", "value": "[REDACTED]"}]'
 
         mock_client = MagicMock()
         mock_response = MagicMock()
@@ -141,18 +142,18 @@ class TriageServiceTest(TestCase):
 
 
 class TriageJudge:
-    """Test fixture: LLM-as-judge evaluator for triage nl_pattern and replacement quality."""
+    """Test fixture: LLM-as-judge evaluator for triage nl_pattern and value quality."""
 
     @classmethod
     def evaluate(cls, actual_pairs: list[dict], expected_pairs: list[dict]) -> dict:
-        """Score nl_pattern and replacement similarity between actual and expected.
+        """Score nl_pattern and value similarity between actual and expected.
 
         Args:
-            actual_pairs: List of {nl_pattern, replacement} dicts from real triage output.
-            expected_pairs: List of {nl_pattern, replacement} dicts from expected output.
+            actual_pairs: List of {nl_pattern, type, value} dicts from real triage output.
+            expected_pairs: List of {nl_pattern, type, value} dicts from expected output.
 
         Returns:
-            dict with nl_pattern_score (0-10) and replacement_score (0-10).
+            dict with nl_pattern_score (0-10) and value_score (0-10).
         """
         api_key = os.environ.get('OPENROUTER_API_KEY', 'mock_key')
         client = OpenAI(
@@ -161,10 +162,10 @@ class TriageJudge:
         )
         system_prompt = (
             "You are an expert evaluator of data transformation specifications. "
-            "Compare the ACTUAL nl_pattern and replacement values against the EXPECTED ones. "
+            "Compare the ACTUAL nl_pattern and value fields against the EXPECTED ones. "
             "Score: 1) nl_pattern_score — how semantically similar are the pattern descriptions (0-10)? "
-            "2) replacement_score — how semantically similar are the replacement values (0-10)? "
-            "Respond with ONLY a JSON object with keys: nl_pattern_score (int), replacement_score (int)."
+            "2) value_score — how semantically similar are the value fields (0-10)? "
+            "Respond with ONLY a JSON object with keys: nl_pattern_score (int), value_score (int)."
         )
         user_prompt = (
             f"ACTUAL: {json.dumps(actual_pairs)}\n"
@@ -190,7 +191,7 @@ class TriageJudge:
 
 
 class TriageServiceJudgeTest(TestCase):
-    """End-to-end eval: real triage LLM call, judge scores nl_pattern/replacement, simple assert on columns."""
+    """End-to-end eval: real triage LLM call, judge scores nl_pattern/value, simple assert on columns."""
 
     def setUp(self):
         if not os.environ.get('OPENROUTER_API_KEY'):
@@ -200,7 +201,7 @@ class TriageServiceJudgeTest(TestCase):
         column_names = ["email", "name", "phone"]
         prompt = "replace all email addresses in the email column with [REDACTED]"
         expected_columns = ["email"]
-        expected_pairs = [{"nl_pattern": "email addresses", "replacement": "[REDACTED]"}]
+        expected_pairs = [{"nl_pattern": "email addresses", "type": "literal", "value": "[REDACTED]"}]
 
         actual = TriageService.triage(prompt, column_names)
 
@@ -208,12 +209,12 @@ class TriageServiceJudgeTest(TestCase):
         actual_columns = [t["column"] for t in actual]
         self.assertEqual(sorted(actual_columns), sorted(expected_columns))
 
-        # Judge scores only nl_pattern and replacement pairs
-        actual_pairs = [{"nl_pattern": t["nl_pattern"], "replacement": t["replacement"]} for t in actual]
+        # Judge scores only nl_pattern and value pairs
+        actual_pairs = [{"nl_pattern": t["nl_pattern"], "type": t["type"], "value": t["value"]} for t in actual]
         evaluation = TriageJudge.evaluate(actual_pairs, expected_pairs)
 
         self.assertGreaterEqual(evaluation["nl_pattern_score"], 5)
-        self.assertGreaterEqual(evaluation["replacement_score"], 5)
+        self.assertGreaterEqual(evaluation["value_score"], 5)
 
 
 class ReadSampleRowsTest(TestCase):
@@ -295,7 +296,7 @@ class TriageServiceSampleDataTest(TestCase):
         column_names = ["email", "city"]
         prompt = "redact emails"
         sample = "email,city\njohn@example.com,New York"
-        mock_response_content = '[{"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"}]'
+        mock_response_content = '[{"column": "email", "nl_pattern": "email addresses", "type": "literal", "value": "[REDACTED]"}]'
 
         mock_client = MagicMock()
         mock_response = MagicMock()
@@ -317,7 +318,7 @@ class TriageServiceSampleDataTest(TestCase):
         """Verify triage prompt instructs LLM to use [REDACTED] for redact/remove/mask."""
         column_names = ["email"]
         prompt = "redact all emails"
-        mock_response_content = '[{"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"}]'
+        mock_response_content = '[{"column": "email", "nl_pattern": "email addresses", "type": "literal", "value": "[REDACTED]"}]'
 
         mock_client = MagicMock()
         mock_response = MagicMock()
@@ -401,7 +402,7 @@ class TriageStaticToolsPromptTest(TestCase):
     def test_prompt_mentions_static_tools(self, mock_openai_class):
         column_names = ["email", "name"]
         prompt = "truncate the name column"
-        mock_response_content = '[{"column": "name", "nl_pattern": "truncate names", "replacement": "truncate"}]'
+        mock_response_content = '[{"column": "name", "nl_pattern": "truncate names", "type": "tool", "value": "truncate"}]'
 
         mock_client = MagicMock()
         mock_response = MagicMock()

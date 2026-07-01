@@ -46,7 +46,7 @@ class JobResultsViewTest(TestCase):
             dataset=self.upload,
             nl_prompt="Clean emails",
             status="SUCCESS",
-            transformations=[{"column": "Name", "nl_pattern": "trim", "replacement": ""}],
+            transformations=[{"column": "Name", "nl_pattern": "trim", "type": "tool", "value": "strip"}],
             generated_regexes=[{"column": "Name", "regex": r"^\s+"}],
             output_file_path="outputs/result.parquet",
             preview_file_path="outputs/preview.parquet",
@@ -57,7 +57,7 @@ class JobResultsViewTest(TestCase):
         self.assertEqual(data["id"], job.id)
         self.assertEqual(data["status"], "SUCCESS")
         self.assertEqual(data["column_names"], ["ID", "Name", "Email"])
-        self.assertEqual(data["transformations"], [{"column": "Name", "nl_pattern": "trim", "replacement": ""}])
+        self.assertEqual(data["transformations"], [{"column": "Name", "nl_pattern": "trim", "type": "tool", "value": "strip"}])
         self.assertEqual(data["generated_regexes"], [{"column": "Name", "regex": r"^\s+"}])
         self.assertEqual(data["rows"], [{"ID": 1, "Name": "Alice"}])
         self.assertEqual(data["page"], 1)

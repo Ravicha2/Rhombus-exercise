@@ -66,7 +66,7 @@ class HappyPathTest(TestCase):
             preview_file_path="output/1/preview.parquet",
         )
         job.refresh_from_db()
-        job.transformations = [{"column": "Email", "nl_pattern": "email pattern", "replacement": "REDACTED"}]
+        job.transformations = [{"column": "Email", "nl_pattern": "email pattern", "type": "literal", "value": "REDACTED"}]
         job.generated_regexes = [{"column": "Email", "regex": r"\S+@\S+\.\S+"}]
         job.save()
 
@@ -96,7 +96,7 @@ class HappyPathTest(TestCase):
         job = ProcessingJob.objects.get(id=job_id)
         job.status = "SUCCESS"
         job.progress = 100.0
-        job.transformations = [{"column": "Email", "nl_pattern": "email pattern", "replacement": "REDACTED"}]
+        job.transformations = [{"column": "Email", "nl_pattern": "email pattern", "type": "literal", "value": "REDACTED"}]
         job.generated_regexes = [{"column": "Email", "regex": r"\S+@\S+\.\S+"}]
         job.output_file_path = "output/2/result"
         job.save()
@@ -108,7 +108,7 @@ class HappyPathTest(TestCase):
         self.assertEqual(data["id"], job_id)
         self.assertEqual(data["status"], "SUCCESS")
         self.assertEqual(data["column_names"], ["ID", "Name", "Email"])
-        self.assertEqual(data["transformations"], [{"column": "Email", "nl_pattern": "email pattern", "replacement": "REDACTED"}])
+        self.assertEqual(data["transformations"], [{"column": "Email", "nl_pattern": "email pattern", "type": "literal", "value": "REDACTED"}])
         self.assertEqual(data["generated_regexes"], [{"column": "Email", "regex": r"\S+@\S+\.\S+"}])
         self.assertEqual(data["rows"], [{"ID": 1, "Name": "Alice"}])
         self.assertEqual(data["page"], 1)
@@ -364,7 +364,7 @@ class CrossEndpointBehaviorTest(TestCase):
                     dataset=self.upload,
                     nl_prompt="Clean",
                     status=status,
-                    transformations=[{"column": "Name", "nl_pattern": "x", "replacement": "y"}],
+                    transformations=[{"column": "Name", "nl_pattern": "x", "type": "literal", "value": "y"}],
                     generated_regexes=[{"column": "Name", "regex": ".*"}],
                     output_file_path="/data/out.parquet",
                     preview_file_path="/data/prev.parquet",

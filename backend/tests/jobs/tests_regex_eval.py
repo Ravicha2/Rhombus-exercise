@@ -98,7 +98,7 @@ class RegexEvalTest(TestCase):
             generated_regexes.append({"column": t["column"], "regex": regex})
 
         specs = [
-            {"column": t["column"], "regex": g["regex"], "replacement": t["replacement"]}
+            {"column": t["column"], "regex": g["regex"], "replacement": t["value"]}
             for t, g in zip(transformations, generated_regexes)
         ]
 

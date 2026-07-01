@@ -44,7 +44,7 @@ class JobStatusViewTest(TestCase):
             nl_prompt="Clean emails",
             status="SUCCESS",
             progress=100.0,
-            transformations=[{"column": "Name", "nl_pattern": "trim", "replacement": ""}],
+            transformations=[{"column": "Name", "nl_pattern": "trim", "type": "tool", "value": "strip"}],
             generated_regexes=[{"column": "Name", "regex": r"^\s+"}],
             output_file_path="/data/output.parquet",
             preview_file_path="/data/preview.parquet",

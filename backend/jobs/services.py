@@ -24,7 +24,7 @@ _REGEX_SAFETY_TEST_STRING = "a" * 30  # short string to detect pathological patt
 
 # ponytail: dict dispatch for static transforms, no framework needed
 STATIC_TOOLS = {
-    "truncate": lambda col: F.substring(col, 1, 10),
+    "truncate": lambda col: F.substring(col, 1, 5),
     "uppercase": lambda col: F.upper(col),
     "lowercase": lambda col: F.lower(col),
     "strip": lambda col: F.trim(col),
@@ -114,6 +114,7 @@ class LLMRegexService:
         cls.validate_regex_safety(pattern)
 
         cache.set(cache_key, pattern, cls.CACHE_TTL)
+        print(pattern)
         return pattern
 
 
@@ -131,7 +132,7 @@ class TriageService:
             column_names: The dataset's actual column names to validate against.
 
         Returns:
-            A list of dicts, each with keys: column, nl_pattern, replacement.
+            A list of dicts, each with keys: column, nl_pattern, type, value.
 
         Raises:
             TriageError: If the LLM response is not valid JSON, not a list, missing
@@ -153,15 +154,38 @@ class TriageService:
             "You are an expert data transformation analyst. "
             "Given a natural language prompt and a list of column names from a dataset, "
             "identify which columns the user wants to transform, what pattern to match in each column, "
-            "and what replacement value to use. "
-            "When the user says 'redact', 'remove', or 'mask' without specifying a replacement, use '[REDACTED]'. "
-            "Static transformations: when the user's intent matches one of these operations, "
-            "set 'replacement' to the exact tool name instead of a literal value: "
-            "truncate (shorten to 10 chars), uppercase, lowercase, strip (trim whitespace), fill_nulls (replace nulls with empty string). "
-            "For all other intents, set 'replacement' to the literal replacement string the user wants. "
-            "Respond with ONLY a JSON array of objects. Each object must have exactly three keys: "
-            "'column' (string), 'nl_pattern' (string), and 'replacement' (string). "
-            "Do not include markdown code blocks, explanations, or any other text. "
+            "and what transformation to apply.\n\n"
+
+            "For each transformation, decide whether it maps to one of these STATIC TOOLS, or requires a LITERAL replacement string:\n"
+            "- truncate: shorten value\n"
+            "- uppercase: convert value to uppercase\n"
+            "- lowercase: convert value to lowercase\n"
+            "- strip: trim leading/trailing whitespace\n"
+            "- fill_nulls: replace null values with empty string\n\n"
+
+            "If the intent matches one of these tools, set 'type' to 'tool' and 'value' to the exact tool name above.\n"
+            "If the intent does not match a tool, set 'type' to 'literal' and 'value' to the exact replacement string the user wants.\n"
+            "When the user says 'redact', 'remove', or 'mask' without specifying a replacement, set 'type' to 'literal' and 'value' to '[REDACTED]'.\n\n"
+
+            "Examples:\n"
+            "- \"truncate emails\" -> {\"type\": \"tool\", \"value\": \"truncate\"}\n"
+            "- \"make the country_code column all caps\" -> {\"type\": \"tool\", \"value\": \"uppercase\"}\n"
+            "- \"trim whitespace from names\" -> {\"type\": \"tool\", \"value\": \"strip\"}\n"
+            "- \"replace missing phone numbers with blank\" -> {\"type\": \"tool\", \"value\": \"fill_nulls\"}\n"
+            "- \"replace SSNs with uppercase X's\" -> {\"type\": \"literal\", \"value\": \"XXXXXXXXX\"}\n"
+            "- \"redact the credit card column\" -> {\"type\": \"literal\", \"value\": \"[REDACTED]\"}\n"
+            "- \"replace 'N/A' in status with 'unknown'\" -> {\"type\": \"literal\", \"value\": \"unknown\"}\n\n"
+
+            "If a single instruction implies multiple operations on the same column (e.g. \"redact and uppercase the SSN column\"), "
+            "treat it as ONE transformation and pick whichever operation is most specific to the user's primary intent — "
+            "prefer the literal/redact behavior over a static tool when both are mentioned.\n\n"
+
+            "Only include columns from the provided column list. Do not invent columns.\n\n"
+
+            "Respond with ONLY a JSON array of objects. Each object must have exactly four keys: "
+            "'column' (string), 'nl_pattern' (string), 'type' ('tool' or 'literal'), and 'value' (string). "
+            "Do not include markdown code blocks, explanations, or any other text.\n\n"
+
             f"The dataset has the following columns: {', '.join(column_names)}."
             f"{sample_section}"
         )
@@ -205,9 +229,9 @@ class TriageService:
                     f"Expected each transformation to be a dict, got {type(item).__name__}. "
                     f"Response was: {raw_content}"
                 )
-            if "column" not in item or "nl_pattern" not in item or "replacement" not in item:
+            if "column" not in item or "nl_pattern" not in item or "type" not in item or "value" not in item:
                 raise TriageError(
-                    f"Each transformation must have keys 'column', 'nl_pattern', and 'replacement'. "
+                    f"Each transformation must have keys 'column', 'nl_pattern', 'type', and 'value'. "
                     f"Missing keys in: {item}. Response was: {raw_content}"
                 )
 

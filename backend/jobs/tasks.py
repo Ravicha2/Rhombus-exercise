@@ -59,8 +59,8 @@ def process_job(self, job_id: int) -> None:
         # Stage 2: Regex generation (skip for static tools)
         generated = []
         for t in transformations:
-            if t["replacement"] in STATIC_TOOLS:
-                generated.append({"column": t["column"], "tool": t["replacement"]})
+            if t["type"] == "tool":
+                generated.append({"column": t["column"], "tool": t["value"]})
             else:
                 regex = LLMRegexService.get_or_generate_regex(t["nl_pattern"], sample_data=sample_data)
                 generated.append({"column": t["column"], "regex": regex})
@@ -77,7 +77,7 @@ def process_job(self, job_id: int) -> None:
             if "tool" in g:
                 specs.append({"column": t["column"], "tool": g["tool"]})
             else:
-                specs.append({"column": t["column"], "regex": g["regex"], "replacement": t["replacement"]})
+                specs.append({"column": t["column"], "regex": g["regex"], "replacement": t["value"]})
 
         # Stage 4: Spark processing
         job.refresh_from_db()

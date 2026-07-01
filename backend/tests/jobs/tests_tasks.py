@@ -53,7 +53,7 @@ class ProcessJobTaskTest(TestCase):
     def test_full_orchestration_marks_success(self, mock_read_sample, mock_triage, mock_regex, mock_storage, mock_spark):
         mock_read_sample.return_value = "email,name\njohn@a.com,Alice"
         mock_triage.triage.return_value = [
-            {"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"},
+            {"column": "email", "nl_pattern": "email addresses", "type": "literal", "value": "[REDACTED]"},
         ]
         mock_regex.get_or_generate_regex.return_value = r"\b\S+@\S+\.\S+\b"
         mock_storage.resolve_parquet_absolute_path.return_value = "/tmp/test.parquet"
@@ -69,7 +69,7 @@ class ProcessJobTaskTest(TestCase):
         mock_triage.triage.assert_called_once_with("redact all emails", ["email", "name", "phone"], sample_data="email,name\njohn@a.com,Alice")
         mock_regex.get_or_generate_regex.assert_called_once_with("email addresses", sample_data="email,name\njohn@a.com,Alice")
         self.assertEqual(job.transformations, [
-            {"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"},
+            {"column": "email", "nl_pattern": "email addresses", "type": "literal", "value": "[REDACTED]"},
         ])
         self.assertEqual(job.generated_regexes, [
             {"column": "email", "regex": r"\b\S+@\S+\.\S+\b"},
@@ -83,8 +83,8 @@ class ProcessJobTaskTest(TestCase):
     def test_multi_column_orchestration(self, mock_read_sample, mock_triage, mock_regex, mock_storage, mock_spark):
         mock_read_sample.return_value = "email,name\na@b.com,Alice"
         mock_triage.triage.return_value = [
-            {"column": "email", "nl_pattern": "email addresses", "replacement": "[EMAIL]"},
-            {"column": "phone", "nl_pattern": "phone numbers", "replacement": "[PHONE]"},
+            {"column": "email", "nl_pattern": "email addresses", "type": "literal", "value": "[EMAIL]"},
+            {"column": "phone", "nl_pattern": "phone numbers", "type": "literal", "value": "[PHONE]"},
         ]
         mock_regex.get_or_generate_regex.side_effect = [r"\S+@\S+", r"\d{3}-\d{4}"]
         mock_storage.resolve_parquet_absolute_path.return_value = "/tmp/test.parquet"
@@ -125,7 +125,7 @@ class ProcessJobTaskTest(TestCase):
     def test_regex_generation_error_marks_failed(self, mock_read_sample, mock_triage, mock_regex, mock_storage):
         mock_read_sample.return_value = "email\na@b.com"
         mock_triage.triage.return_value = [
-            {"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"},
+            {"column": "email", "nl_pattern": "email addresses", "type": "literal", "value": "[REDACTED]"},
         ]
         mock_regex.get_or_generate_regex.side_effect = ValueError("Generated regex pattern is invalid: bad")
         job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact emails")
@@ -145,7 +145,7 @@ class ProcessJobTaskTest(TestCase):
     def test_regex_safety_error_marks_failed(self, mock_read_sample, mock_triage, mock_regex, mock_storage):
         mock_read_sample.return_value = "email\na@b.com"
         mock_triage.triage.return_value = [
-            {"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"},
+            {"column": "email", "nl_pattern": "email addresses", "type": "literal", "value": "[REDACTED]"},
         ]
         mock_regex.get_or_generate_regex.side_effect = RegexSafetyError("catastrophic backtracking")
         job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact emails")
@@ -189,7 +189,7 @@ class ProcessJobTaskTest(TestCase):
     def test_full_e2e_marks_success_with_output_paths(self, mock_read_sample, mock_triage, mock_regex, mock_storage, mock_spark):
         mock_read_sample.return_value = "email\na@b.com"
         mock_triage.triage.return_value = [
-            {"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"},
+            {"column": "email", "nl_pattern": "email addresses", "type": "literal", "value": "[REDACTED]"},
         ]
         mock_regex.get_or_generate_regex.return_value = r"\b\S+@\S+\.\S+\b"
         mock_storage.resolve_parquet_absolute_path.return_value = "/tmp/test.parquet"
@@ -218,7 +218,7 @@ class ProcessJobTaskTest(TestCase):
     def test_spark_error_marks_failed(self, mock_read_sample, mock_triage, mock_regex, mock_storage, mock_spark):
         mock_read_sample.return_value = "email\na@b.com"
         mock_triage.triage.return_value = [
-            {"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"},
+            {"column": "email", "nl_pattern": "email addresses", "type": "literal", "value": "[REDACTED]"},
         ]
         mock_regex.get_or_generate_regex.return_value = r"\S+@\S+"
         mock_storage.resolve_parquet_absolute_path.return_value = "/tmp/test.parquet"
@@ -241,8 +241,8 @@ class ProcessJobTaskTest(TestCase):
     def test_progress_callback_updates_job(self, mock_read_sample, mock_triage, mock_regex, mock_storage, mock_spark):
         mock_read_sample.return_value = "email\na@b.com"
         mock_triage.triage.return_value = [
-            {"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"},
-            {"column": "phone", "nl_pattern": "phone numbers", "replacement": "[PHONE]"},
+            {"column": "email", "nl_pattern": "email addresses", "type": "literal", "value": "[REDACTED]"},
+            {"column": "phone", "nl_pattern": "phone numbers", "type": "literal", "value": "[PHONE]"},
         ]
         mock_regex.get_or_generate_regex.side_effect = [r"\S+@\S+", r"\d{3}-\d{4}"]
         mock_storage.resolve_parquet_absolute_path.return_value = "/tmp/test.parquet"
@@ -282,7 +282,7 @@ class ProcessJobRetryResetTest(TestCase):
         mock_read_sample.return_value = "email\na@b.com"
         """When process_job runs on a FAILED job (retry scenario), it resets to QUEUED first."""
         mock_triage.triage.return_value = [
-            {"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"},
+            {"column": "email", "nl_pattern": "email addresses", "type": "literal", "value": "[REDACTED]"},
         ]
         mock_regex.get_or_generate_regex.return_value = r"\b\S+@\S+\.\S+\b"
         mock_storage.resolve_parquet_absolute_path.return_value = "/tmp/test.parquet"
@@ -312,7 +312,7 @@ class ProcessJobRetryResetTest(TestCase):
         mock_read_sample.return_value = "email\na@b.com"
         """When process_job runs on a RUNNING job (crash recovery), it resets to QUEUED first."""
         mock_triage.triage.return_value = [
-            {"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"},
+            {"column": "email", "nl_pattern": "email addresses", "type": "literal", "value": "[REDACTED]"},
         ]
         mock_regex.get_or_generate_regex.return_value = r"\b\S+@\S+\.\S+\b"
         mock_storage.resolve_parquet_absolute_path.return_value = "/tmp/test.parquet"
@@ -392,7 +392,7 @@ class ProcessJobCancellationTest(TestCase):
 
         def triage_and_cancel(*args, **kwargs):
             ProcessingJob.objects.filter(id=job.id).update(status="CANCELLED")
-            return [{"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"}]
+            return [{"column": "email", "nl_pattern": "email addresses", "type": "literal", "value": "[REDACTED]"}]
 
         mock_triage.triage.side_effect = triage_and_cancel
 
@@ -415,7 +415,7 @@ class ProcessJobCancellationTest(TestCase):
         job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact emails")
 
         mock_triage.triage.return_value = [
-            {"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"},
+            {"column": "email", "nl_pattern": "email addresses", "type": "literal", "value": "[REDACTED]"},
         ]
 
         def regex_and_cancel(*args, **kwargs):
@@ -442,7 +442,7 @@ class ProcessJobCancellationTest(TestCase):
         job = ProcessingJob.objects.create(dataset=self.dataset, nl_prompt="redact emails")
 
         mock_triage.triage.return_value = [
-            {"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"},
+            {"column": "email", "nl_pattern": "email addresses", "type": "literal", "value": "[REDACTED]"},
         ]
         mock_regex.get_or_generate_regex.return_value = r"\b\S+@\S+\.\S+\b"
 
@@ -524,7 +524,7 @@ class ProcessJobStaticToolTest(TestCase):
     def test_static_tool_skips_regex_generation(self, mock_read_sample, mock_triage, mock_regex, mock_storage, mock_spark):
         mock_read_sample.return_value = "name,email\nAlice,a@b.com"
         mock_triage.triage.return_value = [
-            {"column": "name", "nl_pattern": "truncate names", "replacement": "truncate"},
+            {"column": "name", "nl_pattern": "truncate names", "type": "tool", "value": "truncate"},
         ]
         mock_storage.resolve_parquet_absolute_path.return_value = "/tmp/test.parquet"
         mock_spark.process.return_value = ("output/1/result", "output/1/preview.parquet")
@@ -548,8 +548,8 @@ class ProcessJobStaticToolTest(TestCase):
     def test_mixed_static_and_regex_pipeline(self, mock_read_sample, mock_triage, mock_regex, mock_storage, mock_spark):
         mock_read_sample.return_value = "name,email\nAlice,a@b.com"
         mock_triage.triage.return_value = [
-            {"column": "name", "nl_pattern": "truncate names", "replacement": "truncate"},
-            {"column": "email", "nl_pattern": "email addresses", "replacement": "[REDACTED]"},
+            {"column": "name", "nl_pattern": "truncate names", "type": "tool", "value": "truncate"},
+            {"column": "email", "nl_pattern": "email addresses", "type": "literal", "value": "[REDACTED]"},
         ]
         mock_regex.get_or_generate_regex.return_value = r"\S+@\S+\.\S+"
         mock_storage.resolve_parquet_absolute_path.return_value = "/tmp/test.parquet"
