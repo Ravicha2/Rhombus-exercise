@@ -38,6 +38,8 @@ node_modules/
 dist/
 build/
 .eslintcache
+PRODUCT.md
+.impeccable
 
 # IDEs & OS
 .idea/
@@ -48,3 +50,4 @@ build/
 
 # test output
 backend/uploads_storage
+test_data

@@ -3,11 +3,11 @@ import { useNavigate, Link } from "react-router-dom";
 import { listJobs, getJobStatus, cancelJob } from "../api/client";
 
 const STATUS_COLORS = {
-  QUEUED: "bg-yellow-100 text-yellow-800",
-  RUNNING: "bg-blue-100 text-blue-800",
-  SUCCESS: "bg-green-100 text-green-800",
-  FAILED: "bg-red-100 text-red-800",
-  CANCELLED: "bg-gray-100 text-gray-600",
+  QUEUED: "bg-canvas text-muted border border-surface",
+  RUNNING: "bg-surface text-ink",
+  SUCCESS: "bg-ink text-white",
+  FAILED: "bg-muted text-white",
+  CANCELLED: "bg-canvas text-muted border border-surface",
 };
 
 function fileNameFromPath(path) {
@@ -107,27 +107,27 @@ export default function JobsPage() {
   const isActive = (status) => status === "RUNNING" || status === "QUEUED";
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-canvas">
       <div className="max-w-5xl mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Job Logs</h1>
-          <Link to="/" className="text-purple-600 hover:underline text-sm">
+          <h1 className="text-2xl font-bold text-ink">Job Logs</h1>
+          <Link to="/" className="text-ink text-sm rounded-xl btn-primary p-2 bg-blue-400 hover:bg-blue-500">
             Back to Home
           </Link>
         </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-50 text-red-700 rounded border border-red-200 text-sm">
+          <div className="mb-4 p-3 bg-canvas text-ink rounded border-l-4 border-ink text-sm">
             {error}
           </div>
         )}
 
         {jobs.length === 0 ? (
-          <p className="text-gray-500 text-sm">No jobs yet.</p>
+          <p className="text-muted text-sm">No jobs yet.</p>
         ) : (
-          <div className="bg-white rounded-lg border shadow-sm overflow-x-auto">
+          <div className="bg-white rounded-lg border border-surface shadow-sm overflow-x-auto">
             <table className="min-w-full text-sm text-left">
-              <thead className="bg-gray-100 text-gray-700">
+              <thead className="bg-surface text-muted">
                 <tr>
                   <th className="px-4 py-3 font-medium">Filename</th>
                   <th className="px-4 py-3 font-medium">Status</th>
@@ -142,10 +142,10 @@ export default function JobsPage() {
                   <tr
                     key={job.id}
                     onClick={() => handleRowClick(job)}
-                    className={`border-b last:border-b-0 ${
+                    className={`border-b border-surface last:border-b-0 ${
                       job.status === "RUNNING" || job.status === "QUEUED"
                         ? ""
-                        : "cursor-pointer hover:bg-gray-50"
+                        : "cursor-pointer hover:bg-canvas"
                     }`}
                   >
                     <td className="px-4 py-3">
@@ -154,25 +154,25 @@ export default function JobsPage() {
                     <td className="px-4 py-3">
                       <span
                         className={`inline-block px-2 py-1 rounded text-xs font-medium ${
-                          STATUS_COLORS[job.status] || "bg-gray-100 text-gray-800"
+                          STATUS_COLORS[job.status] || "bg-surface text-ink"
                         }`}
                       >
                         {job.status}
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="w-24 h-2 bg-gray-200 rounded overflow-hidden">
+                      <div className="w-24 h-2 bg-surface rounded overflow-hidden">
                         <div
-                          className="h-full bg-purple-600 transition-all duration-300"
+                          className="h-full bg-ink transition-all duration-300"
                           style={{ width: `${job.progress}%` }}
                         />
                       </div>
-                      <span className="text-xs text-gray-500">{job.progress}%</span>
+                      <span className="text-xs text-muted">{job.progress}%</span>
                     </td>
                     <td className="px-4 py-3 max-w-xs truncate" title={job.nl_prompt}>
                       {promptSnippet(job.nl_prompt)}
                     </td>
-                    <td className="px-4 py-3 text-gray-500">
+                    <td className="px-4 py-3 text-muted">
                       {formatDate(job.created_at)}
                     </td>
                     <td className="px-4 py-3">
@@ -180,7 +180,7 @@ export default function JobsPage() {
                         <button
                           onClick={(e) => handleCancel(e, job.id)}
                           disabled={cancellingId === job.id}
-                          className="text-xs px-2 py-1 border rounded text-red-600 border-red-200 hover:bg-red-50 disabled:opacity-50"
+                          className="text-xs px-2 py-1 border rounded text-ink border-surface hover:bg-surface disabled:opacity-50"
                         >
                           {cancellingId === job.id ? "Cancelling…" : "Cancel"}
                         </button>

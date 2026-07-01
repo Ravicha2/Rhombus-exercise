@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
-import { listUploads, uploadFile, startJob } from "../api/client";
+import { listUploads, getUpload, uploadFile, startJob } from "../api/client";
 
 export default function HeroPage() {
   const [uploads, setUploads] = useState([]);
@@ -49,9 +49,19 @@ export default function HeroPage() {
     }
   };
 
-  const handleSelectUpload = (upload) => {
+  const handleSelectUpload = async (upload) => {
     setSelectedUpload(upload);
     setError(null);
+
+    if (!previewCache[upload.id]) {
+      try {
+        const data = await getUpload(upload.id);
+        setPreviewCache((prev) => ({ ...prev, [upload.id]: data.preview }));
+        setSelectedUpload((prev) => ({ ...prev, column_names: data.column_names }));
+      } catch (err) {
+        setError(err.message);
+      }
+    }
   };
 
   const handleStart = async () => {
@@ -77,32 +87,33 @@ export default function HeroPage() {
     <div className="min-h-screen flex flex-col md:flex-row">
       {/* Toast */}
       {toast && (
-        <div className="fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded shadow z-50">
+        <div className="fixed top-4 right-4 bg-ink text-white px-4 py-2 rounded shadow z-50">
           {toast}
         </div>
       )}
 
       {/* Sidebar */}
-      <aside className="w-full md:w-64 border-r bg-gray-50 p-4 shrink-0">
-        <h2 className="font-semibold text-gray-800 mb-3">Uploaded Files</h2>
+      <aside className="w-full md:w-64 border-r border-surface bg-canvas p-4 shrink-0">
+        <h1 className="font-semibold text-ink text-[30px] mb-3 border-b">Rhombus AI</h1>
+        <h2 className="font-semibold text-ink mb-3">Uploaded Files</h2>
         <ul className="space-y-2">
           {uploads.map((u) => (
             <li key={u.id}>
               <button
                 onClick={() => handleSelectUpload(u)}
-                className={`w-full text-left px-3 py-2 rounded text-sm truncate ${
+                className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
                   selectedUpload?.id === u.id
-                    ? "bg-purple-100 text-purple-800"
-                    : "hover:bg-gray-100 text-gray-700"
+                    ? "bg-ink text-white"
+                    : "hover:bg-surface text-muted"
                 }`}
                 title={u.file_path.split("/").pop()}
               >
-                {u.file_path.split("/").pop()}
+                {u.file_path.split("/").pop().slice(0,5)+"..."}
               </button>
             </li>
           ))}
           {uploads.length === 0 && (
-            <li className="text-sm text-gray-500">No uploads yet.</li>
+            <li className="text-sm text-muted">No uploads yet.</li>
           )}
         </ul>
       </aside>
@@ -110,15 +121,14 @@ export default function HeroPage() {
       {/* Main */}
       <main className="flex-1 p-6">
         <div className="max-w-3xl mx-auto">
-          <div className="flex items-center justify-between mb-6">
-            <h1 className="text-2xl font-bold text-gray-900">Rhombus</h1>
-            <Link to="/jobs" className="text-purple-600 hover:underline text-sm">
+          <div className="flex items-center justify-end mb-6">
+            <Link to="/jobs" className="text-ink text-sm rounded-xl btn-primary p-2 bg-blue-400 hover:bg-blue-500">
               Go to Jobs
             </Link>
           </div>
 
           {error && (
-            <div className="mb-4 p-3 bg-red-50 text-red-700 rounded border border-red-200 text-sm">
+            <div className="mb-4 p-3 bg-canvas text-ink rounded border-l-4 border-ink text-sm">
               {error}
             </div>
           )}
@@ -127,9 +137,9 @@ export default function HeroPage() {
           {!selectedUpload ? (
             <div
               onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:bg-gray-50 transition-colors"
+              className="border-2 border-dashed border-surface rounded-lg p-8 text-center cursor-pointer hover:bg-canvas transition-colors"
             >
-              <p className="text-gray-600">
+              <p className="text-muted">
                 {isUploading ? "Uploading..." : "Click to select a CSV/XLSX/XLS file"}
               </p>
               <input
@@ -143,21 +153,21 @@ export default function HeroPage() {
           ) : (
             <div className="mt-2">
               <div className="flex items-center justify-between mb-2">
-                <h3 className="font-semibold text-gray-800">Preview: {fileName}</h3>
+                <h3 className="font-semibold text-ink">Preview: {fileName.slice(0,5)}...</h3>
                 <button
                   onClick={() => {
                     setSelectedUpload(null);
                     setError(null);
                   }}
-                  className="text-sm text-purple-600 hover:underline"
+                  className="text-sm text-ink hover:underline"
                 >
                   Upload another file
                 </button>
               </div>
               {selectedUpload.column_names && selectedUpload.column_names.length > 0 ? (
-                <div className="overflow-x-auto border rounded">
+                <div className="overflow-x-auto border border-surface rounded">
                   <table className="min-w-full text-sm text-left">
-                    <thead className="bg-gray-100 text-gray-700">
+                    <thead className="bg-surface text-muted">
                       <tr>
                         {selectedUpload.column_names.map((col) => (
                           <th key={col} className="px-3 py-2 font-medium border-b">
@@ -168,8 +178,8 @@ export default function HeroPage() {
                     </thead>
                     <tbody>
                       {previewRows.length > 0 ? (
-                        previewRows.map((row, i) => (
-                          <tr key={i} className="border-b last:border-b-0">
+                        previewRows.slice(0, 5).map((row, i) => (
+                          <tr key={i} className="border-b border-surface last:border-b-0">
                             {selectedUpload.column_names.map((col) => (
                               <td key={col} className="px-3 py-2">
                                 {row[col] != null ? String(row[col]) : ""}
@@ -181,7 +191,7 @@ export default function HeroPage() {
                         <tr>
                           <td
                             colSpan={selectedUpload.column_names.length}
-                            className="px-3 py-2 text-gray-500 italic"
+                            className="px-3 py-2 text-muted italic"
                           >
                             Row preview available after upload
                           </td>
@@ -191,20 +201,20 @@ export default function HeroPage() {
                   </table>
                 </div>
               ) : (
-                <p className="text-gray-500 italic">No columns available.</p>
+                <p className="text-muted italic">No columns available.</p>
               )}
             </div>
           )}
 
           {/* Prompt */}
           <div className="mt-6">
-            <label htmlFor="prompt" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="prompt" className="block text-sm font-medium text-muted mb-1">
               Natural language prompt
             </label>
             <textarea
               id="prompt"
               rows={4}
-              className="w-full border rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-100 disabled:text-gray-400"
+              className="w-full border border-surface rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-ink disabled:bg-surface disabled:text-muted/50"
               placeholder="Describe your data transformation..."
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
@@ -213,7 +223,7 @@ export default function HeroPage() {
             <button
               onClick={handleStart}
               disabled={!selectedUpload || !prompt.trim() || isStarting}
-              className="mt-3 px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-sm font-medium"
+              className="mt-3 px-4 py-2 bg-ink text-white rounded hover:bg-muted disabled:bg-surface disabled:text-muted disabled:cursor-not-allowed text-sm font-medium"
             >
               {isStarting ? "Starting..." : "Start Job"}
             </button>

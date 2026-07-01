@@ -59,46 +59,46 @@ export default function JobDetailPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-500 text-sm">Loading…</p>
+      <div className="min-h-screen bg-canvas flex items-center justify-center">
+        <p className="text-muted text-sm">Loading…</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-canvas">
       <div className="max-w-5xl mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Job Detail</h1>
-          <Link to="/jobs" className="text-purple-600 hover:underline text-sm">
+          <h1 className="text-2xl font-bold text-ink">Job Detail</h1>
+          <Link to="/jobs" className="text-ink hover:underline text-sm">
             Back to Jobs
           </Link>
         </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-50 text-red-700 rounded border border-red-200 text-sm">
+          <div className="mb-4 p-3 bg-canvas text-ink rounded border-l-4 border-ink text-sm">
             {error}
           </div>
         )}
 
         {job?.status === "FAILED" && (
-          <div className="mb-4 p-4 bg-red-50 text-red-800 rounded border border-red-200">
+          <div className="mb-4 p-4 bg-canvas text-ink rounded border-l-4 border-ink">
             <p className="font-medium text-sm mb-1">Job failed</p>
             <p className="text-sm">{job.error_message || "Unknown error"}</p>
           </div>
         )}
 
         {job?.status === "CANCELLED" && (
-          <div className="mb-4 p-4 bg-gray-50 text-gray-600 rounded border border-gray-200 text-sm">
+          <div className="mb-4 p-4 bg-canvas text-muted rounded border border-surface text-sm">
             Job cancelled
           </div>
         )}
 
         {job?.status === "SUCCESS" && results && (
           <>
-            <div className="bg-white rounded-lg border shadow-sm overflow-x-auto">
+            <div className="bg-white rounded-lg border border-surface shadow-sm overflow-x-auto">
               <table className="min-w-full text-sm text-left">
-                <thead className="bg-gray-100 text-gray-700">
+                <thead className="bg-surface text-muted">
                   <tr>
                     {results.column_names?.map((col) => (
                       <th key={col} className="px-4 py-3 font-medium">
@@ -109,7 +109,7 @@ export default function JobDetailPage() {
                 </thead>
                 <tbody>
                   {results.rows?.map((row, i) => (
-                    <tr key={i} className="border-b last:border-b-0">
+                    <tr key={i} className="border-b border-surface last:border-b-0">
                       {results.column_names?.map((col) => (
                         <td key={col} className="px-4 py-3">
                           {row[col] != null ? String(row[col]) : ""}
@@ -121,7 +121,7 @@ export default function JobDetailPage() {
                     <tr>
                       <td
                         colSpan={results.column_names?.length || 1}
-                        className="px-4 py-3 text-gray-500 italic"
+                        className="px-4 py-3 text-muted italic"
                       >
                         No results
                       </td>
@@ -134,21 +134,21 @@ export default function JobDetailPage() {
             {/* Pagination */}
             {results.total_pages > 1 && (
               <div className="flex items-center justify-between mt-4 text-sm">
-                <p className="text-gray-500">
+                <p className="text-muted">
                   Page {results.page} of {results.total_pages} ({results.total_rows} rows)
                 </p>
                 <div className="flex gap-2">
                   <button
                     onClick={() => goToPage(results.page - 1)}
                     disabled={results.page <= 1}
-                    className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-3 py-1 border border-surface rounded text-ink hover:bg-canvas disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Previous
                   </button>
                   <button
                     onClick={() => goToPage(results.page + 1)}
                     disabled={results.page >= results.total_pages}
-                    className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-3 py-1 border border-surface rounded text-ink hover:bg-canvas disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Next
                   </button>

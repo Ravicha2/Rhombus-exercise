@@ -19,6 +19,11 @@ export async function uploadFile(file) {
   return handleResponse(response);
 }
 
+export async function getUpload(id) {
+  const response = await fetch(`${API_BASE}/uploads/${id}/`);
+  return handleResponse(response);
+}
+
 export async function listUploads() {
   const response = await fetch(`${API_BASE}/uploads/`);
   return handleResponse(response);

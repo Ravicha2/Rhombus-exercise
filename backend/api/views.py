@@ -16,6 +16,30 @@ from uploads.models import DatasetUpload
 from uploads.services import NormalizationService
 
 
+class UploadDetailView(View):
+    def get(self, request, id):
+        try:
+            upload = DatasetUpload.objects.get(id=id)
+        except DatasetUpload.DoesNotExist:
+            return JsonResponse({"error": f"Upload {id} not found."}, status=404)
+
+        preview = []
+        if upload.status == "READY" and upload.parquet_file_path:
+            try:
+                preview = NormalizationService.preview(upload, limit=10)
+            except Exception:
+                preview = []
+
+        return JsonResponse({
+            "id": upload.id,
+            "file_path": upload.file_path,
+            "status": upload.status,
+            "column_names": upload.column_names,
+            "uploaded_at": upload.uploaded_at.isoformat() if upload.uploaded_at else None,
+            "preview": preview,
+        })
+
+
 class JobListView(View):
     def get(self, request):
         jobs = ProcessingJob.objects.select_related("dataset").order_by("-created_at")
