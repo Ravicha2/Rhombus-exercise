@@ -32,3 +32,10 @@ class NormalizationService:
         # derive relative path by swapping extension, not reconstructing from parts
         parquet_rel_path = os.path.splitext(dataset.file_path)[0] + ".parquet"
         return parquet_rel_path, column_names
+
+    @classmethod
+    def preview(cls, dataset: DatasetUpload, limit: int = 10) -> list[dict]:
+        """Return first `limit` rows from the normalized Parquet as list of dicts."""
+        abs_path = StorageService.resolve_parquet_absolute_path(dataset)
+        df = pd.read_parquet(abs_path)
+        return df.head(limit).to_dict(orient="records")

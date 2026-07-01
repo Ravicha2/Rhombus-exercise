@@ -1,6 +1,5 @@
 import os
 import shutil
-from unittest.mock import patch
 from django.test import TestCase, Client
 from django.core.files.uploadedfile import SimpleUploadedFile
 from uploads.models import DatasetUpload
@@ -23,8 +22,7 @@ class ApiUploadViewTest(TestCase):
     def test_upload_view_exists_in_api_app(self):
         self.assertTrue(callable(UploadView))
 
-    @patch("api.views.normalize_upload.delay")
-    def test_upload_csv_returns_201(self, mock_delay):
+    def test_upload_csv_returns_201(self):
         csv_content = b"ID,Name,Email\n1,John Doe,john@example.com\n"
         upload_file = SimpleUploadedFile(
             "test_upload.csv", csv_content, content_type="text/csv"
@@ -35,7 +33,8 @@ class ApiUploadViewTest(TestCase):
         self.assertIn("upload_id", data)
         self.assertIn("file_path", data)
         self.assertTrue(data["file_path"].startswith("uploads_storage/"))
-        mock_delay.assert_called_once()
+        self.assertIn("column_names", data)
+        self.assertIn("preview", data)
 
         full_path = os.path.join(settings.BASE_DIR, data["file_path"])
         self.assertTrue(os.path.exists(full_path))

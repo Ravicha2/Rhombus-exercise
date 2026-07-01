@@ -122,6 +122,75 @@ class NormalizationServiceTest(TestCase):
             NormalizationService.normalize(dataset)
 
 
+class NormalizationServicePreviewTest(TestCase):
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp_dir)
+
+    def _write_parquet(self, filename="test.parquet", rows=None):
+        import pandas as pd
+        if rows is None:
+            rows = [
+                {"ID": 1, "Name": "Alice", "Email": "alice@example.com"},
+                {"ID": 2, "Name": "Bob", "Email": "bob@example.com"},
+                {"ID": 3, "Name": "Carol", "Email": "carol@example.com"},
+            ]
+        df = pd.DataFrame(rows)
+        path = os.path.join(self.tmp_dir, filename)
+        df.to_parquet(path, engine="pyarrow")
+        return path
+
+    @patch("uploads.services.StorageService.resolve_parquet_absolute_path")
+    def test_preview_returns_rows_as_dicts(self, mock_resolve):
+        parquet_path = self._write_parquet()
+        mock_resolve.return_value = parquet_path
+        dataset = DatasetUpload.objects.create(
+            file_path="uploads_storage/test.csv",
+            status="READY",
+            parquet_file_path="uploads_storage/test.parquet",
+            column_names=["ID", "Name", "Email"],
+        )
+        from uploads.services import NormalizationService
+        preview = NormalizationService.preview(dataset)
+        self.assertIsInstance(preview, list)
+        self.assertEqual(len(preview), 3)
+        for row in preview:
+            self.assertIsInstance(row, dict)
+        self.assertEqual(preview[0]["ID"], 1)
+        self.assertEqual(preview[0]["Name"], "Alice")
+
+    @patch("uploads.services.StorageService.resolve_parquet_absolute_path")
+    def test_preview_limits_rows(self, mock_resolve):
+        rows = [{"ID": i, "Name": f"Name{i}"} for i in range(20)]
+        parquet_path = self._write_parquet(rows=rows)
+        mock_resolve.return_value = parquet_path
+        dataset = DatasetUpload.objects.create(
+            file_path="uploads_storage/test.csv",
+            status="READY",
+            parquet_file_path="uploads_storage/test.parquet",
+        )
+        from uploads.services import NormalizationService
+        preview = NormalizationService.preview(dataset, limit=5)
+        self.assertEqual(len(preview), 5)
+
+    @patch("uploads.services.StorageService.resolve_parquet_absolute_path")
+    def test_preview_default_limit(self, mock_resolve):
+        rows = [{"ID": i, "Name": f"Name{i}"} for i in range(100)]
+        parquet_path = self._write_parquet(rows=rows)
+        mock_resolve.return_value = parquet_path
+        dataset = DatasetUpload.objects.create(
+            file_path="uploads_storage/test.csv",
+            status="READY",
+            parquet_file_path="uploads_storage/test.parquet",
+        )
+        from uploads.services import NormalizationService
+        preview = NormalizationService.preview(dataset)
+        self.assertLessEqual(len(preview), 10)
+
+
 class NormalizeUploadTaskTest(TestCase):
 
     @patch("uploads.tasks.NormalizationService")

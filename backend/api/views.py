@@ -13,15 +13,32 @@ from jobs.models import ProcessingJob
 from jobs.services import paginate_result
 from jobs.tasks import process_job
 from uploads.models import DatasetUpload
-from uploads.tasks import normalize_upload
+from uploads.services import NormalizationService
 
 
 @method_decorator(csrf_exempt, name="dispatch")
 class UploadView(View):
+    def get(self, request):
+        uploads = DatasetUpload.objects.order_by("-uploaded_at")
+        data = [
+            {
+                "id": u.id,
+                "file_path": u.file_path,
+                "status": u.status,
+                "column_names": u.column_names,
+                "uploaded_at": u.uploaded_at,
+            }
+            for u in uploads
+        ]
+        return JsonResponse(data, safe=False)
+
     def post(self, request):
         uploaded_file = request.FILES.get("file")
         if not uploaded_file:
             return JsonResponse({"error": "No file provided."}, status=400)
+
+        if uploaded_file.size == 0:
+            return JsonResponse({"error": "File is empty."}, status=400)
 
         ext = os.path.splitext(uploaded_file.name)[1].lower()
         if ext not in [".csv", ".xlsx", ".xls"]:
@@ -43,13 +60,23 @@ class UploadView(View):
 
         rel_path = f"uploads_storage/{filename}"
         dataset = DatasetUpload.objects.create(file_path=rel_path)
-        normalize_upload.delay(dataset.id)
+
+        try:
+            dataset.mark_converting()
+            parquet_path, column_names = NormalizationService.normalize(dataset)
+            dataset.mark_ready(parquet_file_path=parquet_path, column_names=column_names)
+            preview = NormalizationService.preview(dataset)
+        except Exception as exc:
+            dataset.mark_failed(str(exc))
+            return JsonResponse({"error": "Normalization failed."}, status=500)
 
         return JsonResponse(
             {
                 "upload_id": dataset.id,
                 "file_path": dataset.file_path,
                 "uploaded_at": dataset.uploaded_at,
+                "column_names": dataset.column_names,
+                "preview": preview,
             },
             status=201,
         )
