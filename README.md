@@ -71,7 +71,11 @@ The UI is available at `http://localhost:3000`.
 
 | Endpoint | Method | Description |
 | :--- | :--- | :--- |
-| `/api/upload/` | `POST` | Upload CSV/Excel, returns `dataset_id` after normalization |
+| `/api/health/` | `GET` | Health check |
+| `/api/uploads/` | `GET` | List all dataset uploads |
+| `/api/uploads/` | `POST` | Upload CSV/Excel, returns `dataset_id` after normalization |
+| `/api/uploads/<id>/` | `GET` | Get upload details and data preview |
+| `/api/jobs/` | `GET` | List all processing jobs |
 | `/api/jobs/start/` | `POST` | Start a replacement job, returns `job_id` immediately |
 | `/api/jobs/<id>/status/` | `GET` | Poll job status (`QUEUED`/`RUNNING`/`SUCCESS`/`FAILED`) and progress |
 | `/api/jobs/<id>/results/` | `GET` | Paginated processed output (`?page=N&page_size=M`) |
