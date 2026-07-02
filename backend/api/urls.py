@@ -1,7 +1,11 @@
 from django.urls import path
-from api.views import UploadView, UploadDetailView, JobStartView, JobStatusView, JobResultsView, JobCancelView, JobListView
+from api.views import (
+    UploadView, UploadDetailView, JobStartView, JobStatusView,
+    JobResultsView, JobCancelView, JobListView, health_check,
+)
 
 urlpatterns = [
+    path("health/", health_check, name="health-check"),
     path("uploads/", UploadView.as_view(), name="upload-dataset"),
     path("uploads/<int:id>/", UploadDetailView.as_view(), name="upload-detail"),
     path("jobs/", JobListView.as_view(), name="job-list"),

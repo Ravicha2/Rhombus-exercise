@@ -465,7 +465,7 @@ name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371, upload-time = "2025-11-21T23:01:54.787Z" }
 wheels = [
@@ -499,6 +499,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/41/35/5cf9e5de04a66fd2c03e0ad74078a16e3d12c9a0091137b366a337d5d8bc/google_genai-0.2.0.tar.gz", hash = "sha256:8fffd99f91ef1874f3716ba54b9f0371191527de7c40081046f83345c69a6586", size = 104327, upload-time = "2024-12-12T01:43:16.179Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/36/b8/dd156e45fe648d0d52e9635b4dcec9f2efd7d02cc0e568304c05c99b75ff/google_genai-0.2.0-py3-none-any.whl", hash = "sha256:39fc5cb6d405f91449adbba9f68a9484b94b93f3a9a8c761c8f31ae134e23630", size = 110900, upload-time = "2024-12-12T01:43:13.678Z" },
+]
+
+[[package]]
+name = "gunicorn"
+version = "26.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6d/b7/a4a3f632f823e432ce6bc65f62961b7980c898c77f075a2f7118cb3846fe/gunicorn-26.0.0.tar.gz", hash = "sha256:ca9346f85e3a4aeeb64d491045c16b9a35647abd37ea15efe53080eb8b090baf", size = 727286, upload-time = "2026-05-05T06:38:25.529Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e6/40/9c2384fc2be4ad25dd4a49decd5ad9ea5a3639814c11bd40ab77cb9f0a14/gunicorn-26.0.0-py3-none-any.whl", hash = "sha256:40233d26a5f0d1872916188c276e21641155111c2853f0c2cd55260aec0d24fc", size = 212009, upload-time = "2026-05-05T06:38:23.007Z" },
 ]
 
 [[package]]
@@ -1286,6 +1298,7 @@ dependencies = [
     { name = "django-cors-headers" },
     { name = "djangorestframework" },
     { name = "google-genai" },
+    { name = "gunicorn" },
     { name = "openai" },
     { name = "openpyxl" },
     { name = "pandas" },
@@ -1309,6 +1322,7 @@ requires-dist = [
     { name = "django-cors-headers", specifier = "==4.3.1" },
     { name = "djangorestframework", specifier = "==3.15.1" },
     { name = "google-genai", specifier = "==0.2.0" },
+    { name = "gunicorn", specifier = ">=22.0.0" },
     { name = "openai", specifier = ">=1.35.0" },
     { name = "openpyxl", specifier = "==3.1.2" },
     { name = "pandas", specifier = "==2.2.1" },

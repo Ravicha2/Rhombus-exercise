@@ -1,0 +1,11 @@
+{$HOST:localhost} {
+    reverse_proxy /api/* web:8000
+    reverse_proxy /admin/* web:8000
+    reverse_proxy /static/* web:8000
+
+    root * /srv/frontend
+    try_files {path} /index.html
+    file_server
+
+    encode gzip
+}
