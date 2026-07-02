@@ -81,19 +81,6 @@ The UI is available at `http://localhost:3000`.
 | `/api/jobs/<id>/results/` | `GET` | Paginated processed output (`?page=N&page_size=M`) |
 | `/api/jobs/<id>/cancel/` | `POST` | Cancel a running job |
 
-### Request examples
-
-**Upload a dataset:**
-
-**Start a replacement job:**
-
-**Poll status:**
-
-```bash
-curl http://localhost:8000/api/jobs/2/status/
-# {"status": "RUNNING", "progress": 65}
-```
-
 ---
 
 ## Job Lifecycle
