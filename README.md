@@ -177,3 +177,5 @@ docs/
 Live at [http://207.148.87.49](http://207.148.87.49)
 
 For multi-node, separate the Celery worker into its own service with `SPARK_MASTER` pointing to a Spark cluster.
+
+# Demo Video on [youtube](https://youtu.be/mFec2jMgosg)
