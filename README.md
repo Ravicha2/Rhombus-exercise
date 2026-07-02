@@ -174,6 +174,6 @@ docs/
 
 ## Deployment
 
-> **Note**: Public deployment URL and demo video will be added here.
+Live at [http://207.148.87.49](http://207.148.87.49)
 
-The Docker Compose setup is production-ready for single-node deployments. For multi-node, separate the Celery worker into its own service with `SPARK_MASTER` pointing to a Spark cluster.
+For multi-node, separate the Celery worker into its own service with `SPARK_MASTER` pointing to a Spark cluster.
