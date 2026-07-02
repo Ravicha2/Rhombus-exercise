@@ -83,6 +83,8 @@ class LLMRegexService:
             "and valid Python/Java compatible regular expression. "
             "The regex will be used with regexp_replace to find and replace patterns within longer strings, "
             "so NEVER use ^ or $ anchors. "
+            "NEVER use capturing groups; use only non-capturing groups (?:...) for grouping. "
+            "Capturing groups cause regexp_replace to produce duplicate replacements. "
             "Output ONLY the raw regex string. Do not include markdown code blocks, backticks, explanations, or quotes."
         )
 
@@ -109,6 +111,9 @@ class LLMRegexService:
                 pattern = "\n".join(lines[1:-1]).strip()
             else:
                 pattern = pattern.replace("```regex", "").replace("```", "").strip()
+
+        # Convert capturing groups to non-capturing to prevent duplicate replacements
+        pattern = re.sub(r'(?<!\\)\((?!\?)', '(?:', pattern)
 
         # Validate regex: compilation + backtracking guard
         cls.validate_regex_safety(pattern)

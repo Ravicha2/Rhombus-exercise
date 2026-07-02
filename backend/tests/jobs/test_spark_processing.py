@@ -98,6 +98,21 @@ class SparkProcessingServiceTest(TestCase):
         preview = pd.read_parquet(os.path.join(self.tmpdir, preview_path))
         self.assertEqual(len(preview), 100)
 
+    def test_regex_no_double_replacement(self):
+        """Capturing groups in regexp_replace must not cause duplicate replacements."""
+        df = pd.DataFrame({"email": ["alice@example.com"]})
+        parquet_path = self._write_parquet(df)
+        # Full-email regex; if capturing groups are used, regexp_replace doubles the replacement
+        specs = self._make_specs([("email", r"[\w.+-]+@[\w.-]+\.[\w]+", "[REDACTED]")])
+
+        out_path, _ = SparkProcessingService.process(
+            parquet_path, specs, self.job_id, storage_dir=self.tmpdir
+        )
+
+        result = pd.read_parquet(os.path.join(self.tmpdir, out_path))
+        self.assertEqual(result["email"].iloc[0], "[REDACTED]")
+        self.assertNotIn("[REDACTED][REDACTED]", result["email"].iloc[0])
+
     def test_progress_callback_called(self):
         df = pd.DataFrame({"email": ["a@b.com", "c@d.org"], "phone": ["555-0000", "555-1111"]})
         parquet_path = self._write_parquet(df)
